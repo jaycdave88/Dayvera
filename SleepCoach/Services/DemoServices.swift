@@ -130,8 +130,40 @@ final class DemoHealthService: HealthDataProviding {
     }
 }
 
+@MainActor
 final class DemoCalendarService: CalendarProviding {
     var authorizationLabel: String { "Connected" }
+
+    func availableCalendarSources() throws -> [CalendarSourceDescriptor] {
+        [
+            CalendarSourceDescriptor(
+                id: "demo-icloud",
+                title: "iCloud",
+                calendars: [CalendarDescriptor(
+                    id: "demo-personal",
+                    title: "Personal",
+                    sourceIdentifier: "demo-icloud",
+                    sourceTitle: "iCloud",
+                    allowsContentModifications: true,
+                    isDefault: true,
+                    supportsBusyAvailability: true
+                )]
+            ),
+            CalendarSourceDescriptor(
+                id: "demo-work",
+                title: "Work Account",
+                calendars: [CalendarDescriptor(
+                    id: "demo-work-calendar",
+                    title: "Work",
+                    sourceIdentifier: "demo-work",
+                    sourceTitle: "Work Account",
+                    allowsContentModifications: true,
+                    isDefault: false,
+                    supportsBusyAvailability: true
+                )]
+            )
+        ]
+    }
 
     func requestAccess() async throws -> Bool { true }
 

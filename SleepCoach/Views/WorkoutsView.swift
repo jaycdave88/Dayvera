@@ -2,6 +2,7 @@ import Combine
 import Foundation
 import SwiftData
 import SwiftUI
+import UIKit
 
 struct WorkoutsView: View {
     @Environment(\.modelContext) private var modelContext
@@ -583,6 +584,7 @@ private struct ExercisePrescriptionEditorView: View {
 private struct ExerciseEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var appModel: AppModel
+    let showsTargetRPE: Bool
     let onSave: (WorkoutExercise) -> Void
     @State private var name = ""
     @State private var muscle: MuscleGroup = .fullBody
@@ -591,6 +593,14 @@ private struct ExerciseEditorView: View {
     @State private var weight = 45.0
     @State private var rpe = 8.0
     @State private var rest = 120
+
+    init(
+        showsTargetRPE: Bool = true,
+        onSave: @escaping (WorkoutExercise) -> Void
+    ) {
+        self.showsTargetRPE = showsTargetRPE
+        self.onSave = onSave
+    }
 
     var body: some View {
         NavigationStack {
@@ -607,7 +617,9 @@ private struct ExerciseEditorView: View {
                     in: 0...appModel.trainingProfile.loadUnit.maximumWorkoutLoad,
                     step: appModel.trainingProfile.loadUnit.inputStep
                 )
-                Stepper("Target RPE: \(rpe, specifier: "%.1f")", value: $rpe, in: 5...10, step: 0.5)
+                if showsTargetRPE {
+                    Stepper("Target RPE: \(rpe, specifier: "%.1f")", value: $rpe, in: 5...10, step: 0.5)
+                }
                 Stepper("Rest: \(rest) sec", value: $rest, in: 30...600, step: 15)
             }
             .navigationTitle("Add exercise")
@@ -644,9 +656,52 @@ struct ActiveSet: Identifiable, Codable, Hashable {
     var weight: Double
     var loadUnit: LoadUnit? = nil
     var reps: Int
-    var rpe: Double
     let restSeconds: Int
     var isComplete = false
+}
+
+struct ActiveSetProgressionSnapshot: Hashable {
+    let id: UUID
+    let weight: Double
+    let repetitions: Int
+}
+
+func applyingProgressionRecommendation(
+    _ recommendation: WorkoutProgressionRecommendation,
+    to activeSets: [ActiveSet],
+    exerciseID: UUID,
+    loadUnit: LoadUnit
+) -> [ActiveSet] {
+    var updated = activeSets
+    for index in updated.indices
+    where updated[index].exerciseID == exerciseID && !updated[index].isComplete {
+        updated[index].weight = min(
+            max(updated[index].weight, max(recommendation.suggestedLoad, 0)),
+            loadUnit.maximumWorkoutLoad
+        )
+        updated[index].loadUnit = loadUnit
+        updated[index].reps = min(
+            max(updated[index].reps, max(recommendation.suggestedRepetitions, 1)),
+            1_000
+        )
+    }
+    return updated
+}
+
+func restoringProgressionSnapshot(
+    in activeSets: [ActiveSet],
+    exerciseID: UUID,
+    snapshots: [ActiveSetProgressionSnapshot]
+) -> [ActiveSet] {
+    let valuesByID = Dictionary(uniqueKeysWithValues: snapshots.map { ($0.id, $0) })
+    var updated = activeSets
+    for index in updated.indices where updated[index].exerciseID == exerciseID {
+        guard !updated[index].isComplete,
+              let previous = valuesByID[updated[index].id] else { continue }
+        updated[index].weight = previous.weight
+        updated[index].reps = previous.repetitions
+    }
+    return updated
 }
 
 func backfillingCatalogIDs(
@@ -674,6 +729,8 @@ struct ActiveWorkoutDraft: Codable, Hashable {
     let startedAt: Date
     let sets: [ActiveSet]
     let notes: String
+    var restDeadline: Date? = nil
+    var restSourceSetID: UUID? = nil
 }
 
 func normalizedWorkoutStart(
@@ -769,7 +826,6 @@ struct ActiveWorkoutView: View {
     private enum FocusedField: Hashable {
         case weight(UUID)
         case repetitions(UUID)
-        case effort(UUID)
         case notes
     }
 
@@ -779,22 +835,28 @@ struct ActiveWorkoutView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.scenePhase) private var scenePhase
     @ObservedObject private var catalogStore = ExerciseCatalogStore.shared
+    @Query(sort: \WorkoutSessionRecord.startedAt, order: .reverse) private var sessions: [WorkoutSessionRecord]
 
     let templateID: UUID
     let templateName: String
-    let exercises: [WorkoutExercise]
     let adjustment: WorkoutAdjustment
     let loadUnit: LoadUnit
+    @State private var exercises: [WorkoutExercise]
     @State private var sets: [ActiveSet]
     @State private var startedAt = Date.now
     @State private var currentTime = Date.now
     @State private var restDeadline: Date?
+    @State private var restSourceSetID: UUID?
     @State private var showingFinish = false
     @State private var showingDiscard = false
+    @State private var showingExerciseLibrary = false
+    @State private var showingCustomExercise = false
     @State private var notes = ""
     @State private var resumeNotice: String?
     @State private var detailExercise: ExerciseDefinition?
     @State private var detailSelection: [String] = []
+    @State private var progressionExplanation: WorkoutProgressionRecommendation?
+    @State private var progressionUndo: [UUID: [ActiveSetProgressionSnapshot]] = [:]
     @FocusState private var focusedField: FocusedField?
     private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     private let draftStore = ActiveWorkoutDraftStore()
@@ -803,7 +865,6 @@ struct ActiveWorkoutView: View {
         templateID = template.id
         templateName = template.name
         let normalizedExercises = template.exercises.map { $0.converted(to: loadUnit) }
-        exercises = normalizedExercises
         self.adjustment = adjustment
         self.loadUnit = loadUnit
         if let draft = ActiveWorkoutDraftStore().load(), draft.templateID == template.id {
@@ -817,8 +878,20 @@ struct ActiveWorkoutView: View {
                 converted.loadUnit = loadUnit
                 return converted
             }
+            let restoredRestSource = draft.restSourceSetID.flatMap { sourceID in
+                restoredSets.contains(where: { $0.id == sourceID && $0.isComplete }) ? sourceID : nil
+            }
+            let restoredRestDeadline = normalizedStart == draft.startedAt
+                && restoredRestSource != nil
+                && (draft.restDeadline ?? .distantPast) > now
+                ? draft.restDeadline
+                : nil
+            _exercises = State(initialValue: restoredExercises)
             _sets = State(initialValue: restoredSets)
             _startedAt = State(initialValue: normalizedStart)
+            _currentTime = State(initialValue: now)
+            _restDeadline = State(initialValue: restoredRestDeadline)
+            _restSourceSetID = State(initialValue: restoredRestDeadline == nil ? nil : restoredRestSource)
             _notes = State(initialValue: draft.notes)
             _resumeNotice = State(initialValue: normalizedStart == draft.startedAt ? nil : "This draft was from an earlier session, so its timer restarted. Your sets and notes were kept.")
         } else {
@@ -835,12 +908,14 @@ struct ActiveWorkoutView: View {
                         weight: exercise.targetWeight,
                         loadUnit: loadUnit,
                         reps: exercise.targetReps,
-                        rpe: min(exercise.targetRPE, adjustment.rpeCap ?? 10),
                         restSeconds: exercise.restSeconds
                     ))
                 }
             }
+            _exercises = State(initialValue: normalizedExercises)
             _sets = State(initialValue: proposed)
+            _restDeadline = State(initialValue: nil)
+            _restSourceSetID = State(initialValue: nil)
         }
     }
 
@@ -855,23 +930,7 @@ struct ActiveWorkoutView: View {
                     }
                 }
 
-                Section {
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack {
-                            Label(elapsed, systemImage: "timer")
-                            Spacer()
-                            if restRemaining > 0 {
-                                Label {
-                                    Text("Rest \(restRemaining)s")
-                                } icon: {
-                                    Image(systemName: "hourglass").foregroundStyle(Color.coachAmber)
-                                }
-                            }
-                        }
-                        if restRemaining > 0 { restTimerControls }
-                    }
-                    .font(.headline.monospacedDigit())
-                }
+                Section { compactWorkoutHeader }
 
                 if let workoutValidationMessage {
                     Section("Fix before finishing") {
@@ -887,6 +946,9 @@ struct ActiveWorkoutView: View {
 
                 ForEach(exercises) { exercise in
                     Section {
+                        if let recommendation = progressionRecommendation(for: exercise) {
+                            progressionCard(recommendation, exercise: exercise)
+                        }
                         if let catalogID = exercise.catalogID,
                            catalogStore.exercises.contains(where: { $0.id == catalogID }) {
                             Button {
@@ -907,11 +969,16 @@ struct ActiveWorkoutView: View {
                         } else {
                             Grid(horizontalSpacing: 8, verticalSpacing: 10) {
                                 GridRow {
-                                    columnHeader("SET", width: 28)
-                                    columnHeader(loadUnit.symbol.uppercased(), width: 64)
-                                    columnHeader("REPS", width: 52)
-                                    columnHeader("RPE", width: 52)
-                                    Color.clear.frame(width: 44, height: 1)
+                                    columnHeader("SET", width: 26)
+                                    columnHeader("PREVIOUS", width: 70)
+                                    columnHeader(loadUnit.symbol.uppercased(), width: 62)
+                                        .accessibilityLabel("Load in \(loadUnit.spokenName)")
+                                    columnHeader("REPS", width: 48)
+                                    Image(systemName: "checkmark")
+                                        .font(.caption2.weight(.semibold))
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 44)
+                                        .accessibilityHidden(true)
                                 }
 
                                 ForEach($sets) { $set in
@@ -921,8 +988,33 @@ struct ActiveWorkoutView: View {
                                 }
                             }
                         }
+                        Button {
+                            addSet(to: exercise)
+                        } label: {
+                            Label("Add Set", systemImage: "plus")
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                        .buttonStyle(.bordered)
                     } header: {
-                        Text(exercise.name)
+                        exerciseHeader(exercise)
+                    }
+                }
+
+                Section {
+                    Menu {
+                        Button {
+                            showingExerciseLibrary = true
+                        } label: {
+                            Label("From exercise library", systemImage: "books.vertical.fill")
+                        }
+                        Button {
+                            showingCustomExercise = true
+                        } label: {
+                            Label("Create custom exercise", systemImage: "square.and.pencil")
+                        }
+                    } label: {
+                        Label("Add exercise", systemImage: "plus.circle.fill")
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                     }
                 }
 
@@ -931,7 +1023,11 @@ struct ActiveWorkoutView: View {
                         .focused($focusedField, equals: .notes)
                 }
             }
+            .listSectionSpacing(14)
             .scrollDismissesKeyboard(.interactively)
+            .safeAreaInset(edge: .bottom) {
+                if restRemaining > 0 { restTimerBar }
+            }
             .navigationTitle(templateName)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -959,21 +1055,49 @@ struct ActiveWorkoutView: View {
                     selectedIDs: $detailSelection
                 )
             }
+            .sheet(isPresented: $showingExerciseLibrary) {
+                ExerciseLibraryView(existingCatalogIDs: Set(exercises.compactMap(\.catalogID))) { definitions in
+                    definitions.forEach { appendExercise($0.workoutExercise(loadUnit: loadUnit)) }
+                }
+            }
+            .sheet(isPresented: $showingCustomExercise) {
+                ExerciseEditorView(showsTargetRPE: false) { appendExercise($0.converted(to: loadUnit)) }
+            }
+            .alert(item: $progressionExplanation) { recommendation in
+                Alert(
+                    title: Text("Why this progression?"),
+                    message: Text(recommendation.rationale + " Only exercise-level sets logged in Sleep Coach are used."),
+                    dismissButton: .default(Text("Got it"))
+                )
+            }
             .onReceive(ticker) { date in
                 currentTime = date
-                if let restDeadline, date >= restDeadline { self.restDeadline = nil }
+                if let restDeadline, date >= restDeadline {
+                    clearRestTimer()
+                    UIAccessibility.post(
+                        notification: .announcement,
+                        argument: "Rest complete. Start your next set when ready."
+                    )
+                }
             }
             .onAppear { saveDraft() }
             .task { await catalogStore.load() }
+            .onChange(of: exercises) { _, _ in saveDraft() }
             .onChange(of: sets) { _, _ in saveDraft() }
             .onChange(of: notes) { _, _ in saveDraft() }
+            .onChange(of: restDeadline) { _, _ in saveDraft() }
+            .onChange(of: restSourceSetID) { _, _ in saveDraft() }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active else { return }
                 normalizeDraftTimingIfNeeded()
             }
-            .confirmationDialog("Finish this workout?", isPresented: $showingFinish, titleVisibility: .visible) {
-                Button("Save completed sets") { finishWorkout() }
+            .confirmationDialog(finishDialogTitle, isPresented: $showingFinish, titleVisibility: .visible) {
+                Button(completedSetCount == 1 ? "Save 1 completed set" : "Save \(completedSetCount) completed sets") {
+                    finishWorkout()
+                }
                 Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(finishDialogMessage)
             }
             .confirmationDialog("Leave this workout?", isPresented: $showingDiscard, titleVisibility: .visible) {
                 Button("Save and close") {
@@ -991,6 +1115,122 @@ struct ActiveWorkoutView: View {
         }
     }
 
+    private var compactWorkoutHeader: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label(elapsed, systemImage: "timer")
+                    Text("\(completedSetCount) of \(sets.count) sets complete")
+                }
+            } else {
+                HStack(spacing: 12) {
+                    Label(elapsed, systemImage: "timer")
+                    Spacer(minLength: 8)
+                    Text("\(completedSetCount)/\(sets.count) sets")
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+        }
+        .font(.headline.monospacedDigit())
+        .padding(.vertical, 2)
+    }
+
+    private func progressionCard(
+        _ recommendation: WorkoutProgressionRecommendation,
+        exercise: WorkoutExercise
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(progressionSummary(recommendation), systemImage: progressionSymbol(recommendation))
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(recommendation.action == .hold ? Color.secondary : Color.coachIndigo)
+                .fixedSize(horizontal: false, vertical: true)
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) {
+                    progressionButtons(recommendation, exercise: exercise)
+                }
+            } else {
+                HStack(spacing: 8) {
+                    progressionButtons(recommendation, exercise: exercise)
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private func progressionButtons(
+        _ recommendation: WorkoutProgressionRecommendation,
+        exercise: WorkoutExercise
+    ) -> some View {
+        Button("Why") { progressionExplanation = recommendation }
+            .buttonStyle(.bordered)
+            .frame(minHeight: 44)
+            .accessibilityLabel("Why this progression for \(exercise.name)")
+
+        if progressionUndo[exercise.id] != nil {
+            Button("Undo") { undoProgression(for: exercise) }
+                .buttonStyle(.bordered)
+                .frame(minHeight: 44)
+                .accessibilityLabel("Undo progression for \(exercise.name)")
+        } else if progressionAlreadyApplied(recommendation, to: exercise) {
+            Label("Applied", systemImage: "checkmark")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color.coachMint)
+                .frame(minHeight: 44)
+        } else if recommendation.canApply {
+            Button("Apply") { applyProgression(recommendation, to: exercise) }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.coachIndigo)
+                .frame(minHeight: 44)
+                .disabled(!sets.contains { $0.exerciseID == exercise.id && !$0.isComplete })
+                .accessibilityLabel("Apply progression to \(exercise.name)")
+        }
+    }
+
+    private func exerciseHeader(_ exercise: WorkoutExercise) -> some View {
+        HStack(spacing: 8) {
+            Text(exercise.name)
+                .font(.headline)
+                .foregroundStyle(Color.coachIndigo)
+            Spacer(minLength: 8)
+            Menu {
+                Button {
+                    addSet(to: exercise)
+                } label: {
+                    Label("Add set", systemImage: "plus")
+                }
+                Button {
+                    removeLastSet(from: exercise)
+                } label: {
+                    Label("Remove last set", systemImage: "minus")
+                }
+                .disabled(!canRemoveLastSet(from: exercise))
+
+                if let definition = catalogDefinition(for: exercise) {
+                    Button {
+                        detailExercise = definition
+                    } label: {
+                        Label("Technique and instructions", systemImage: "info.circle")
+                    }
+                }
+
+                Divider()
+                Button(role: .destructive) {
+                    removeExercise(exercise)
+                } label: {
+                    Label("Remove exercise", systemImage: "trash")
+                }
+                .disabled(!canRemoveExercise(exercise))
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Options for \(exercise.name)")
+        }
+    }
+
     private func columnHeader(_ title: String, width: CGFloat) -> some View {
         Text(title)
             .font(.caption2.weight(.semibold))
@@ -1002,13 +1242,17 @@ struct ActiveWorkoutView: View {
         GridRow {
             Text("\(set.wrappedValue.setNumber)")
                 .font(.subheadline.bold())
-                .frame(width: 28)
-            weightField(set).frame(width: 64)
-            repsField(set).frame(width: 52)
-            rpeField(set).frame(width: 52)
+                .frame(width: 26)
+            previousSetControl(set).frame(width: 70)
+            weightField(set).frame(width: 62)
+            repsField(set).frame(width: 48)
             completionButton(set).frame(width: 44)
         }
         .padding(.vertical, 3)
+        .background(
+            set.wrappedValue.isComplete ? Color.coachMint.opacity(0.12) : Color.clear,
+            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+        )
     }
 
     private func accessibleSetEditor(_ set: Binding<ActiveSet>) -> some View {
@@ -1018,28 +1262,99 @@ struct ActiveWorkoutView: View {
                 Spacer()
                 completionButton(set)
             }
-            LabeledContent("Weight (\(loadUnit.symbol))") { weightField(set).frame(maxWidth: 150) }
+            LabeledContent("Previous") { previousSetControl(set) }
+            LabeledContent("Load (\(loadUnit.symbol))") { weightField(set).frame(maxWidth: 150) }
             LabeledContent("Repetitions") { repsField(set).frame(maxWidth: 150) }
-            LabeledContent("Effort (RPE)") { rpeField(set).frame(maxWidth: 150) }
         }
-        .padding(.vertical, 5)
+        .padding(8)
+        .background(
+            set.wrappedValue.isComplete ? Color.coachMint.opacity(0.12) : Color.clear,
+            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+        )
+    }
+
+    private func previousSetControl(_ set: Binding<ActiveSet>) -> some View {
+        Group {
+            if let previous = previousSetPerformance(
+                catalogID: set.wrappedValue.catalogID,
+                exerciseName: set.wrappedValue.exerciseName,
+                setNumber: set.wrappedValue.setNumber,
+                from: sessions,
+                displayedIn: loadUnit
+            ) {
+                Button {
+                    set.wrappedValue.weight = previous.weight
+                    set.wrappedValue.loadUnit = loadUnit
+                    set.wrappedValue.reps = previous.reps
+                    progressionUndo.removeValue(forKey: set.wrappedValue.exerciseID)
+                } label: {
+                    Text("\(formattedLoad(previous.weight))×\(previous.reps)")
+                        .foregroundStyle(set.wrappedValue.isComplete ? Color.secondary : Color.coachIndigo)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(set.wrappedValue.isComplete)
+                .accessibilityLabel(
+                    "\(set.wrappedValue.exerciseName), set \(set.wrappedValue.setNumber), previous: "
+                        + "\(formattedLoad(previous.weight)) \(loadUnit.spokenName) for \(previous.reps) repetitions"
+                )
+                .accessibilityHint("Copies the previous load and repetitions into this set")
+            } else {
+                Text("—")
+                    .foregroundStyle(.tertiary)
+                    .accessibilityLabel(
+                        "\(set.wrappedValue.exerciseName), set \(set.wrappedValue.setNumber), no previous set"
+                    )
+            }
+        }
+        .font(.caption.monospacedDigit())
+        .lineLimit(1)
+        .minimumScaleFactor(0.75)
+    }
+
+    private var restTimerBar: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "hourglass")
+                    .foregroundStyle(Color.coachAmber)
+                Text("Rest \(restRemaining)s")
+                    .font(.headline.monospacedDigit())
+                if let restSourceDescription {
+                    Text("· \(restSourceDescription)")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            restTimerControls
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.regularMaterial)
+        .overlay(alignment: .top) { Divider() }
     }
 
     private var restTimerControls: some View {
-        HStack(spacing: 10) {
-            Button("+15 sec") {
-                restDeadline = (restDeadline ?? Date.now).addingTimeInterval(15)
-            }
-            .buttonStyle(.bordered)
-            .frame(minHeight: 44)
-
-            Button("Skip Rest") {
-                restDeadline = nil
-            }
-            .buttonStyle(.bordered)
-            .frame(minHeight: 44)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) { restTimerButtons }
+            VStack(alignment: .leading, spacing: 8) { restTimerButtons }
         }
         .font(.subheadline)
+    }
+
+    @ViewBuilder
+    private var restTimerButtons: some View {
+        Button("−15 sec") { adjustRestTimer(by: -15) }
+            .buttonStyle(.bordered)
+            .frame(minHeight: 44)
+        Button("+15 sec") { adjustRestTimer(by: 15) }
+            .buttonStyle(.bordered)
+            .frame(minHeight: 44)
+        Button("Skip Rest") { clearRestTimer() }
+            .buttonStyle(.bordered)
+            .frame(minHeight: 44)
     }
 
     private func weightField(_ set: Binding<ActiveSet>) -> some View {
@@ -1066,24 +1381,15 @@ struct ActiveWorkoutView: View {
             )
     }
 
-    private func rpeField(_ set: Binding<ActiveSet>) -> some View {
-        TextField("RPE", value: set.rpe, format: .number.precision(.fractionLength(0...1)))
-            .keyboardType(.decimalPad)
-            .focused($focusedField, equals: .effort(set.wrappedValue.id))
-            .frame(minHeight: 44)
-            .multilineTextAlignment(.center)
-            .textFieldStyle(.roundedBorder)
-            .accessibilityLabel(
-                "\(set.wrappedValue.exerciseName), set \(set.wrappedValue.setNumber), effort RPE"
-            )
-    }
-
     private func completionButton(_ set: Binding<ActiveSet>) -> some View {
         Button {
             set.wrappedValue.isComplete.toggle()
-            restDeadline = set.wrappedValue.isComplete
-                ? Date.now.addingTimeInterval(Double(set.wrappedValue.restSeconds))
-                : nil
+            if set.wrappedValue.isComplete {
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                startRestTimer(after: set.wrappedValue)
+            } else if restSourceSetID == set.wrappedValue.id {
+                clearRestTimer()
+            }
         } label: {
             Image(systemName: set.wrappedValue.isComplete ? "checkmark.circle.fill" : "circle")
                 .font(.title2)
@@ -1100,12 +1406,43 @@ struct ActiveWorkoutView: View {
 
     private var elapsed: String {
         let seconds = max(Int(currentTime.timeIntervalSince(startedAt)), 0)
+        if seconds >= 3_600 {
+            return String(
+                format: "%d:%02d:%02d",
+                seconds / 3_600,
+                (seconds % 3_600) / 60,
+                seconds % 60
+            )
+        }
         return String(format: "%02d:%02d", seconds / 60, seconds % 60)
+    }
+
+    private var completedSetCount: Int {
+        sets.filter(\.isComplete).count
+    }
+
+    private var finishDialogTitle: String {
+        completedSetCount < sets.count ? "Finish partial workout?" : "Finish this workout?"
+    }
+
+    private var finishDialogMessage: String {
+        let incompleteCount = max(sets.count - completedSetCount, 0)
+        guard incompleteCount > 0 else {
+            return "All completed sets will be saved to Training History."
+        }
+        let noun = incompleteCount == 1 ? "set" : "sets"
+        return "\(incompleteCount) incomplete \(noun) will be left out. Your \(completedSetCount) completed \(completedSetCount == 1 ? "set" : "sets") will be saved."
     }
 
     private var restRemaining: Int {
         guard let restDeadline else { return 0 }
         return max(Int(ceil(restDeadline.timeIntervalSince(currentTime))), 0)
+    }
+
+    private var restSourceDescription: String? {
+        guard let restSourceSetID,
+              let source = sets.first(where: { $0.id == restSourceSetID }) else { return nil }
+        return "\(source.exerciseName), set \(source.setNumber)"
     }
 
     private var workoutValidationMessage: String? {
@@ -1116,11 +1453,206 @@ struct ActiveWorkoutView: View {
             if !(1...1_000).contains(set.reps) {
                 return "\(set.exerciseName), set \(set.setNumber): enter 1 to 1,000 repetitions."
             }
-            if !set.rpe.isFinite || !(1...10).contains(set.rpe) {
-                return "\(set.exerciseName), set \(set.setNumber): enter an RPE from 1 to 10."
-            }
         }
         return nil
+    }
+
+    private func progressionRecommendation(
+        for exercise: WorkoutExercise
+    ) -> WorkoutProgressionRecommendation? {
+        guard let recommendation = workoutProgressionRecommendation(
+            for: exercise,
+            sessions: sessions,
+            displayedIn: loadUnit,
+            allowsProgression: adjustment.allowProgression
+        ) else { return nil }
+        let editableSets = sets.filter { $0.exerciseID == exercise.id && !$0.isComplete }
+        let currentSets = editableSets.isEmpty
+            ? sets.filter { $0.exerciseID == exercise.id }
+            : editableSets
+        return nonRegressiveProgressionRecommendation(
+            recommendation,
+            currentDraftLoad: currentSets.map(\.weight).max() ?? exercise.targetWeight,
+            currentDraftRepetitions: currentSets.map(\.reps).max() ?? exercise.targetReps
+        )
+    }
+
+    private func progressionSummary(_ recommendation: WorkoutProgressionRecommendation) -> String {
+        switch recommendation.action {
+        case .increaseLoad:
+            "Try \(formattedLoad(recommendation.suggestedLoad)) \(loadUnit.symbol) × \(recommendation.suggestedRepetitions)"
+        case .increaseRepetitions:
+            recommendation.suggestedLoad > 0
+                ? "Try \(formattedLoad(recommendation.suggestedLoad)) \(loadUnit.symbol) × \(recommendation.suggestedRepetitions)"
+                : "Try \(recommendation.suggestedRepetitions) repetitions"
+        case .hold:
+            recommendation.currentLoad > 0
+                ? "Keep \(formattedLoad(recommendation.currentLoad)) \(loadUnit.symbol) × \(recommendation.currentRepetitions)"
+                : "Keep \(recommendation.currentRepetitions) repetitions"
+        }
+    }
+
+    private func progressionSymbol(_ recommendation: WorkoutProgressionRecommendation) -> String {
+        switch recommendation.action {
+        case .increaseLoad: "arrow.up.right.circle.fill"
+        case .increaseRepetitions: "plus.circle.fill"
+        case .hold: "equal.circle.fill"
+        }
+    }
+
+    private func progressionAlreadyApplied(
+        _ recommendation: WorkoutProgressionRecommendation,
+        to exercise: WorkoutExercise
+    ) -> Bool {
+        let editable = sets.filter { $0.exerciseID == exercise.id && !$0.isComplete }
+        guard !editable.isEmpty, recommendation.canApply else { return false }
+        return editable.allSatisfy {
+            $0.weight + 0.000_1 >= recommendation.suggestedLoad
+                && $0.reps >= recommendation.suggestedRepetitions
+        }
+    }
+
+    private func applyProgression(
+        _ recommendation: WorkoutProgressionRecommendation,
+        to exercise: WorkoutExercise
+    ) {
+        let editableIndices = sets.indices.filter {
+            sets[$0].exerciseID == exercise.id && !sets[$0].isComplete
+        }
+        guard !editableIndices.isEmpty else { return }
+        progressionUndo[exercise.id] = editableIndices.map {
+            ActiveSetProgressionSnapshot(
+                id: sets[$0].id,
+                weight: sets[$0].weight,
+                repetitions: sets[$0].reps
+            )
+        }
+        sets = applyingProgressionRecommendation(
+            recommendation,
+            to: sets,
+            exerciseID: exercise.id,
+            loadUnit: loadUnit
+        )
+    }
+
+    private func undoProgression(for exercise: WorkoutExercise) {
+        guard let snapshots = progressionUndo.removeValue(forKey: exercise.id) else { return }
+        sets = restoringProgressionSnapshot(
+            in: sets,
+            exerciseID: exercise.id,
+            snapshots: snapshots
+        )
+    }
+
+    private func appendExercise(_ exercise: WorkoutExercise) {
+        if let catalogID = exercise.catalogID,
+           exercises.contains(where: { $0.catalogID == catalogID }) {
+            return
+        }
+        let normalized = exercise.converted(to: loadUnit)
+        exercises.append(normalized)
+        let count = adaptedWorkingSetCounts(
+            for: [normalized],
+            volumeMultiplier: adjustment.volumeMultiplier
+        )[normalized.id, default: max(normalized.workingSets, 1)]
+        for number in 1...max(count, 1) {
+            sets.append(ActiveSet(
+                exerciseID: normalized.id,
+                catalogID: normalized.catalogID,
+                exerciseName: normalized.name,
+                setNumber: number,
+                weight: normalized.targetWeight,
+                loadUnit: loadUnit,
+                reps: normalized.targetReps,
+                restSeconds: normalized.restSeconds
+            ))
+        }
+    }
+
+    private func addSet(to exercise: WorkoutExercise) {
+        let exerciseSets = sets.filter { $0.exerciseID == exercise.id }
+        let latest = exerciseSets.max(by: { $0.setNumber < $1.setNumber })
+        sets.append(ActiveSet(
+            exerciseID: exercise.id,
+            catalogID: exercise.catalogID,
+            exerciseName: exercise.name,
+            setNumber: (latest?.setNumber ?? 0) + 1,
+            weight: latest?.weight ?? exercise.targetWeight,
+            loadUnit: loadUnit,
+            reps: latest?.reps ?? exercise.targetReps,
+            restSeconds: exercise.restSeconds
+        ))
+        progressionUndo.removeValue(forKey: exercise.id)
+    }
+
+    private func removeLastSet(from exercise: WorkoutExercise) {
+        let exerciseSets = sets.filter { $0.exerciseID == exercise.id }
+        guard exerciseSets.count > 1,
+              let last = exerciseSets.max(by: { $0.setNumber < $1.setNumber }),
+              !last.isComplete,
+              let index = sets.firstIndex(where: { $0.id == last.id }) else { return }
+        if restSourceSetID == last.id { clearRestTimer() }
+        sets.remove(at: index)
+        progressionUndo.removeValue(forKey: exercise.id)
+    }
+
+    private func removeExercise(_ exercise: WorkoutExercise) {
+        guard canRemoveExercise(exercise) else { return }
+        let removedSetIDs = Set(sets.filter { $0.exerciseID == exercise.id }.map(\.id))
+        if let restSourceSetID, removedSetIDs.contains(restSourceSetID) { clearRestTimer() }
+        sets.removeAll { $0.exerciseID == exercise.id }
+        exercises.removeAll { $0.id == exercise.id }
+        progressionUndo.removeValue(forKey: exercise.id)
+    }
+
+    private func canRemoveLastSet(from exercise: WorkoutExercise) -> Bool {
+        let exerciseSets = sets.filter { $0.exerciseID == exercise.id }
+        guard exerciseSets.count > 1,
+              let last = exerciseSets.max(by: { $0.setNumber < $1.setNumber }) else { return false }
+        return !last.isComplete
+    }
+
+    private func canRemoveExercise(_ exercise: WorkoutExercise) -> Bool {
+        !sets.contains { $0.exerciseID == exercise.id && $0.isComplete }
+    }
+
+    private func catalogDefinition(for exercise: WorkoutExercise) -> ExerciseDefinition? {
+        guard let catalogID = exercise.catalogID else { return nil }
+        return catalogStore.exercises.first(where: { $0.id == catalogID })
+    }
+
+    private func startRestTimer(after set: ActiveSet, now: Date = .now) {
+        guard set.restSeconds > 0 else {
+            clearRestTimer()
+            return
+        }
+        restSourceSetID = set.id
+        restDeadline = now.addingTimeInterval(Double(set.restSeconds))
+        currentTime = now
+        UIAccessibility.post(
+            notification: .announcement,
+            argument: "Rest timer started for \(set.restSeconds) seconds after \(set.exerciseName), set \(set.setNumber)."
+        )
+    }
+
+    private func adjustRestTimer(by seconds: TimeInterval, now: Date = .now) {
+        guard let restDeadline else { return }
+        let adjusted = restDeadline.addingTimeInterval(seconds)
+        guard adjusted > now else {
+            clearRestTimer()
+            return
+        }
+        self.restDeadline = adjusted
+        currentTime = now
+    }
+
+    private func clearRestTimer() {
+        restDeadline = nil
+        restSourceSetID = nil
+    }
+
+    private func formattedLoad(_ value: Double) -> String {
+        value.formatted(.number.precision(.fractionLength(0...1)))
     }
 
     private func saveDraft() {
@@ -1130,7 +1662,9 @@ struct ActiveWorkoutView: View {
             exercises: exercises,
             startedAt: startedAt,
             sets: sets,
-            notes: notes
+            notes: notes,
+            restDeadline: restDeadline,
+            restSourceSetID: restSourceSetID
         ))
         if !saved {
             resumeNotice = "This draft couldn’t be autosaved. Keep Sleep Coach open until you finish or try again after unlocking your iPhone."
@@ -1143,7 +1677,7 @@ struct ActiveWorkoutView: View {
         guard normalizedStart != startedAt else { return }
 
         startedAt = normalizedStart
-        restDeadline = nil
+        clearRestTimer()
         resumeNotice = "This draft was from an earlier session, so its timer restarted. Your sets and notes were kept."
         saveDraft()
     }
@@ -1165,7 +1699,6 @@ struct ActiveWorkoutView: View {
                 weight: activeSet.weight,
                 loadUnit: activeSet.loadUnit ?? loadUnit,
                 reps: activeSet.reps,
-                rpe: activeSet.rpe,
                 isWarmup: false,
                 completedAt: end
             )

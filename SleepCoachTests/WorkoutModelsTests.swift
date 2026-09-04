@@ -113,7 +113,20 @@ final class WorkoutModelsTests: XCTestCase {
             [
                 HKCategoryTypeIdentifier.sleepAnalysis.rawValue,
                 HKQuantityTypeIdentifier.heartRateVariabilitySDNN.rawValue,
-                HKQuantityTypeIdentifier.restingHeartRate.rawValue
+                HKQuantityTypeIdentifier.restingHeartRate.rawValue,
+                HKQuantityTypeIdentifier.respiratoryRate.rawValue,
+                HKQuantityTypeIdentifier.oxygenSaturation.rawValue,
+                HKQuantityTypeIdentifier.appleSleepingWristTemperature.rawValue,
+                HKQuantityTypeIdentifier.bodyTemperature.rawValue,
+                HKQuantityTypeIdentifier.heartRate.rawValue,
+                HKQuantityTypeIdentifier.activeEnergyBurned.rawValue,
+                HKQuantityTypeIdentifier.appleExerciseTime.rawValue,
+                HKQuantityTypeIdentifier.stepCount.rawValue,
+                HKObjectType.workoutType().identifier,
+                HKQuantityTypeIdentifier.bodyMass.rawValue,
+                HKQuantityTypeIdentifier.bodyFatPercentage.rawValue,
+                HKQuantityTypeIdentifier.leanBodyMass.rawValue,
+                HKQuantityTypeIdentifier.bodyMassIndex.rawValue
             ]
         )
     }
@@ -167,6 +180,37 @@ final class WorkoutModelsTests: XCTestCase {
 
         XCTAssertEqual(moderate.values.reduce(0, +), 7)
         XCTAssertEqual(low.values.reduce(0, +), 3)
+    }
+
+    func testGeneratedWorkoutLaunchKeepsAppliedVolumeButPreservesProgressionGate() {
+        let recoveryGate = WorkoutAdjustment(
+            title: "Safety check",
+            detail: "Hold progression.",
+            volumeMultiplier: 0.75,
+            rpeCap: 8,
+            allowProgression: false
+        )
+        let ready = WorkoutAdjustment(
+            title: "Full performance session",
+            detail: "Full plan.",
+            volumeMultiplier: 1,
+            rpeCap: nil,
+            allowProgression: true
+        )
+
+        let gatedLaunch = generatedWorkoutLaunchAdjustment(
+            dailyAdjustment: recoveryGate,
+            effort: .asPlanned
+        )
+        let easierLaunch = generatedWorkoutLaunchAdjustment(
+            dailyAdjustment: ready,
+            effort: .easier
+        )
+
+        XCTAssertEqual(gatedLaunch.volumeMultiplier, 1)
+        XCTAssertNil(gatedLaunch.rpeCap)
+        XCTAssertFalse(gatedLaunch.allowProgression)
+        XCTAssertFalse(easierLaunch.allowProgression)
     }
 
     func testSessionVolumeExcludesWarmups() {
@@ -348,7 +392,6 @@ final class WorkoutModelsTests: XCTestCase {
             setNumber: 1,
             weight: restoredExercise.targetWeight,
             reps: restoredExercise.targetReps,
-            rpe: restoredExercise.targetRPE,
             restSeconds: restoredExercise.restSeconds
         )
 
@@ -364,7 +407,6 @@ final class WorkoutModelsTests: XCTestCase {
             weight: restoredDraftSet.weight,
             loadUnit: restoredDraftSet.loadUnit,
             reps: restoredDraftSet.reps,
-            rpe: restoredDraftSet.rpe,
             isWarmup: false,
             completedAt: Date(timeIntervalSince1970: 0)
         )
@@ -374,6 +416,472 @@ final class WorkoutModelsTests: XCTestCase {
         XCTAssertEqual(restoredCompleted.catalogID, "goblet-squat")
         XCTAssertEqual(restoredCompleted.loadUnit, .kilograms)
         XCTAssertEqual(restoredCompleted.progressionKey, "catalog:goblet-squat")
+        XCTAssertNil(restoredCompleted.rpe)
+    }
+
+    func testPreviousSetUsesCatalogIdentityAndConvertsToDisplayUnit() throws {
+        let exerciseID = UUID()
+        let correct = session(
+            id: UUID(),
+            day: 2,
+            sets: [set(
+                exerciseID: exerciseID,
+                catalogID: "barbell-bench-press",
+                name: "Bench Press",
+                number: 1,
+                weight: 100,
+                reps: 6,
+                loadUnit: .kilograms
+            )]
+        )
+        let newerSameNameDifferentCatalog = session(
+            id: UUID(),
+            day: 3,
+            sets: [set(
+                exerciseID: exerciseID,
+                catalogID: "machine-bench-press",
+                name: "Bench Press",
+                number: 1,
+                weight: 300,
+                reps: 10
+            )]
+        )
+
+        let previous = try XCTUnwrap(previousSetPerformance(
+            catalogID: "barbell-bench-press",
+            exerciseName: "Bench Press",
+            setNumber: 1,
+            from: [correct, newerSameNameDifferentCatalog],
+            displayedIn: .pounds
+        ))
+
+        XCTAssertEqual(previous.sessionID, correct.id)
+        XCTAssertEqual(previous.weight, 220.462, accuracy: 0.001)
+        XCTAssertEqual(previous.loadUnit, .pounds)
+        XCTAssertEqual(previous.reps, 6)
+    }
+
+    func testPreviousSetFallsBackToNormalizedNameForLegacyHistory() throws {
+        let legacy = session(
+            id: UUID(),
+            day: 1,
+            sets: [set(
+                exerciseID: UUID(),
+                catalogID: nil,
+                name: "  GOBLET Squát  ",
+                number: 2,
+                weight: 50,
+                reps: 10
+            )]
+        )
+
+        let previous = try XCTUnwrap(previousSetPerformance(
+            catalogID: "goblet-squat",
+            exerciseName: "Goblet Squat",
+            setNumber: 2,
+            from: [legacy],
+            displayedIn: .pounds
+        ))
+
+        XCTAssertEqual(previous.reps, 10)
+        XCTAssertNil(previousSetPerformance(
+            catalogID: "goblet-squat",
+            exerciseName: "Goblet Squat",
+            setNumber: 3,
+            from: [legacy],
+            displayedIn: .pounds
+        ))
+    }
+
+    func testCustomExerciseDoesNotBorrowSameNameCatalogHistory() {
+        let catalogHistory = progressionSession(
+            for: progressionExercise(),
+            day: 2,
+            weight: 200,
+            reps: 8
+        )
+        var customExercise = progressionExercise()
+        customExercise.catalogID = nil
+
+        XCTAssertNil(previousSetPerformance(
+            catalogID: nil,
+            exerciseName: customExercise.name,
+            setNumber: 1,
+            from: [catalogHistory],
+            displayedIn: .pounds
+        ))
+        XCTAssertNil(workoutProgressionRecommendation(
+            for: customExercise,
+            sessions: [catalogHistory],
+            displayedIn: .pounds,
+            allowsProgression: true
+        ))
+    }
+
+    func testProgressionAddsOneRepBeforeUpperRange() throws {
+        let exercise = progressionExercise()
+        let history = session(
+            id: UUID(),
+            day: 2,
+            sets: [set(
+                exerciseID: UUID(),
+                catalogID: exercise.catalogID,
+                name: exercise.name,
+                number: 1,
+                weight: 100,
+                reps: 7
+            )]
+        )
+
+        let recommendation = try XCTUnwrap(workoutProgressionRecommendation(
+            for: exercise,
+            sessions: [history],
+            displayedIn: .pounds,
+            allowsProgression: true
+        ))
+
+        XCTAssertEqual(recommendation.action, .increaseRepetitions)
+        XCTAssertEqual(recommendation.suggestedLoad, 100)
+        XCTAssertEqual(recommendation.suggestedRepetitions, 8)
+        XCTAssertTrue(recommendation.canApply)
+    }
+
+    func testBodyweightProgressionHoldsAtUpperRange() throws {
+        var exercise = progressionExercise()
+        exercise.targetWeight = 0
+        let history = progressionSession(for: exercise, day: 1, weight: 0, reps: 8)
+
+        let recommendation = try XCTUnwrap(workoutProgressionRecommendation(
+            for: exercise,
+            sessions: [history],
+            displayedIn: .pounds,
+            allowsProgression: true
+        ))
+
+        XCTAssertEqual(recommendation.action, .hold)
+        XCTAssertEqual(recommendation.suggestedRepetitions, 8)
+        XCTAssertFalse(recommendation.canApply)
+    }
+
+    func testProgressionRequiresTwoLatestUpperRangeSessionsBeforeLoadIncrease() throws {
+        let exercise = progressionExercise(loadUnit: .kilograms)
+        let first = progressionSession(for: exercise, day: 1, weight: 100, reps: 8, loadUnit: .kilograms)
+        let second = progressionSession(for: exercise, day: 2, weight: 100, reps: 8, loadUnit: .kilograms)
+
+        let oneSession = try XCTUnwrap(workoutProgressionRecommendation(
+            for: exercise,
+            sessions: [first],
+            displayedIn: .kilograms,
+            allowsProgression: true
+        ))
+        let twoSessions = try XCTUnwrap(workoutProgressionRecommendation(
+            for: exercise,
+            sessions: [first, second],
+            displayedIn: .kilograms,
+            allowsProgression: true
+        ))
+
+        XCTAssertEqual(oneSession.action, .hold)
+        XCTAssertFalse(oneSession.canApply)
+        XCTAssertEqual(twoSessions.action, .increaseLoad)
+        XCTAssertEqual(twoSessions.currentLoad, 100, accuracy: 0.001)
+        XCTAssertEqual(twoSessions.suggestedLoad, 102.5, accuracy: 0.001)
+        XCTAssertEqual(twoSessions.suggestedRepetitions, 6)
+    }
+
+    func testProgressionDoesNotSkipAnInterveningBelowRangeSession() throws {
+        let exercise = progressionExercise()
+        let firstSuccess = progressionSession(for: exercise, day: 1, weight: 200, reps: 8)
+        let belowRange = progressionSession(for: exercise, day: 2, weight: 200, reps: 7)
+        let secondSuccess = progressionSession(for: exercise, day: 3, weight: 200, reps: 8)
+
+        let recommendation = try XCTUnwrap(workoutProgressionRecommendation(
+            for: exercise,
+            sessions: [belowRange, secondSuccess, firstSuccess],
+            displayedIn: .pounds,
+            allowsProgression: true
+        ))
+
+        XCTAssertEqual(recommendation.action, .hold)
+        XCTAssertEqual(recommendation.suggestedLoad, 200)
+        XCTAssertEqual(recommendation.suggestedRepetitions, 8)
+    }
+
+    func testProgressionRequiresLatestUpperRangeSessionsAtSameLoad() throws {
+        let exercise = progressionExercise()
+        let previous = progressionSession(for: exercise, day: 1, weight: 195, reps: 8)
+        let latest = progressionSession(for: exercise, day: 2, weight: 200, reps: 8)
+
+        let recommendation = try XCTUnwrap(workoutProgressionRecommendation(
+            for: exercise,
+            sessions: [latest, previous],
+            displayedIn: .pounds,
+            allowsProgression: true
+        ))
+
+        XCTAssertEqual(recommendation.action, .hold)
+        XCTAssertEqual(recommendation.suggestedLoad, 200)
+        XCTAssertFalse(recommendation.canApply)
+    }
+
+    func testPartialExerciseHistoryDoesNotCountAsUpperRangeSuccess() throws {
+        let exercise = progressionExercise()
+        let complete = progressionSession(for: exercise, day: 1, weight: 200, reps: 8)
+        let partial = session(
+            id: UUID(),
+            day: 2,
+            sets: [set(
+                exerciseID: exercise.id,
+                catalogID: exercise.catalogID,
+                name: exercise.name,
+                number: 1,
+                weight: 200,
+                reps: 8
+            )]
+        )
+
+        let recommendation = try XCTUnwrap(workoutProgressionRecommendation(
+            for: exercise,
+            sessions: [complete, partial],
+            displayedIn: .pounds,
+            allowsProgression: true
+        ))
+
+        XCTAssertEqual(recommendation.action, .hold)
+        XCTAssertEqual(recommendation.suggestedLoad, 200)
+    }
+
+    func testMixedLoadSessionsDoNotQualifyForLoadProgression() throws {
+        let exercise = progressionExercise()
+        let mixedSessions = [1, 2].map { day in
+            session(
+                id: UUID(),
+                day: day,
+                sets: [
+                    set(exerciseID: exercise.id, catalogID: exercise.catalogID, name: exercise.name, number: 1, weight: 200, reps: 8),
+                    set(exerciseID: exercise.id, catalogID: exercise.catalogID, name: exercise.name, number: 2, weight: 190, reps: 8),
+                    set(exerciseID: exercise.id, catalogID: exercise.catalogID, name: exercise.name, number: 3, weight: 180, reps: 8)
+                ]
+            )
+        }
+
+        let recommendation = try XCTUnwrap(workoutProgressionRecommendation(
+            for: exercise,
+            sessions: mixedSessions,
+            displayedIn: .pounds,
+            allowsProgression: true
+        ))
+
+        XCTAssertEqual(recommendation.action, .hold)
+        XCTAssertFalse(recommendation.canApply)
+    }
+
+    func testDuplicateSetNumbersDoNotQualifyForLoadProgression() throws {
+        let exercise = progressionExercise()
+        let duplicateSessions = [1, 2].map { day in
+            session(
+                id: UUID(),
+                day: day,
+                sets: [1, 2, 2].map { number in
+                    set(
+                        exerciseID: exercise.id,
+                        catalogID: exercise.catalogID,
+                        name: exercise.name,
+                        number: number,
+                        weight: 200,
+                        reps: 8
+                    )
+                }
+            )
+        }
+
+        let recommendation = try XCTUnwrap(workoutProgressionRecommendation(
+            for: exercise,
+            sessions: duplicateSessions,
+            displayedIn: .pounds,
+            allowsProgression: true
+        ))
+
+        XCTAssertEqual(recommendation.action, .hold)
+        XCTAssertFalse(recommendation.canApply)
+    }
+
+    func testProgressionRecommendationAndApplicationNeverLowerDraftValues() {
+        let exerciseID = UUID()
+        let historical = WorkoutProgressionRecommendation(
+            exerciseID: exerciseID,
+            action: .increaseLoad,
+            currentLoad: 100,
+            suggestedLoad: 105,
+            currentRepetitions: 8,
+            suggestedRepetitions: 6,
+            loadUnit: .pounds,
+            rationale: "History supports a load increase."
+        )
+        let reconciled = nonRegressiveProgressionRecommendation(
+            historical,
+            currentDraftLoad: 100,
+            currentDraftRepetitions: 8
+        )
+        let activeSets = [
+            ActiveSet(
+                exerciseID: exerciseID,
+                exerciseName: "Bench Press",
+                setNumber: 1,
+                weight: 110,
+                reps: 7,
+                restSeconds: 120
+            ),
+            ActiveSet(
+                exerciseID: exerciseID,
+                exerciseName: "Bench Press",
+                setNumber: 2,
+                weight: 100,
+                reps: 9,
+                restSeconds: 120
+            )
+        ]
+
+        let applied = applyingProgressionRecommendation(
+            reconciled,
+            to: activeSets,
+            exerciseID: exerciseID,
+            loadUnit: .pounds
+        )
+
+        XCTAssertEqual(reconciled.suggestedLoad, 105)
+        XCTAssertEqual(reconciled.suggestedRepetitions, 8)
+        XCTAssertEqual(applied[0].weight, 110)
+        XCTAssertEqual(applied[0].reps, 8)
+        XCTAssertEqual(applied[1].weight, 105)
+        XCTAssertEqual(applied[1].reps, 9)
+    }
+
+    func testProgressionUndoDoesNotMutateASetCompletedAfterApply() {
+        let exerciseID = UUID()
+        let completedID = UUID()
+        let editableID = UUID()
+        let snapshots = [
+            ActiveSetProgressionSnapshot(id: completedID, weight: 100, repetitions: 8),
+            ActiveSetProgressionSnapshot(id: editableID, weight: 100, repetitions: 8)
+        ]
+        let progressedSets = [
+            ActiveSet(
+                id: completedID,
+                exerciseID: exerciseID,
+                exerciseName: "Bench Press",
+                setNumber: 1,
+                weight: 105,
+                reps: 9,
+                restSeconds: 120,
+                isComplete: true
+            ),
+            ActiveSet(
+                id: editableID,
+                exerciseID: exerciseID,
+                exerciseName: "Bench Press",
+                setNumber: 2,
+                weight: 105,
+                reps: 9,
+                restSeconds: 120
+            )
+        ]
+
+        let restored = restoringProgressionSnapshot(
+            in: progressedSets,
+            exerciseID: exerciseID,
+            snapshots: snapshots
+        )
+
+        XCTAssertEqual(restored[0].weight, 105)
+        XCTAssertEqual(restored[0].reps, 9)
+        XCTAssertEqual(restored[1].weight, 100)
+        XCTAssertEqual(restored[1].reps, 8)
+    }
+
+    func testRecoveryGateCanOnlyHoldAHistoryBasedIncrease() throws {
+        let exercise = progressionExercise()
+        let sessions = [
+            progressionSession(for: exercise, day: 1, weight: 200, reps: 8),
+            progressionSession(for: exercise, day: 2, weight: 200, reps: 8)
+        ]
+
+        let recommendation = try XCTUnwrap(workoutProgressionRecommendation(
+            for: exercise,
+            sessions: sessions,
+            displayedIn: .pounds,
+            allowsProgression: false
+        ))
+
+        XCTAssertEqual(recommendation.action, .hold)
+        XCTAssertEqual(recommendation.suggestedLoad, recommendation.currentLoad)
+        XCTAssertEqual(recommendation.suggestedRepetitions, recommendation.currentRepetitions)
+        XCTAssertFalse(recommendation.canApply)
+    }
+
+    func testActiveDraftRoundTripKeepsRestDeadlineAndSourceSet() throws {
+        let sourceID = UUID()
+        let deadline = Date(timeIntervalSince1970: 10_500)
+        let draft = ActiveWorkoutDraft(
+            templateID: UUID(),
+            templateName: "Upper",
+            exercises: [],
+            startedAt: Date(timeIntervalSince1970: 10_000),
+            sets: [ActiveSet(
+                id: sourceID,
+                exerciseID: UUID(),
+                exerciseName: "Press",
+                setNumber: 1,
+                weight: 50,
+                reps: 8,
+                restSeconds: 90,
+                isComplete: true
+            )],
+            notes: "",
+            restDeadline: deadline,
+            restSourceSetID: sourceID
+        )
+
+        let restored = try JSONDecoder().decode(
+            ActiveWorkoutDraft.self,
+            from: JSONEncoder().encode(draft)
+        )
+
+        XCTAssertEqual(restored.restDeadline, deadline)
+        XCTAssertEqual(restored.restSourceSetID, sourceID)
+        XCTAssertEqual(restored.sets.first?.id, sourceID)
+    }
+
+    func testLegacyActiveDraftWithoutNewOptionalFieldsStillDecodes() throws {
+        let templateID = UUID()
+        let setID = UUID()
+        let exerciseID = UUID()
+        let legacyJSON: [String: Any] = [
+            "templateID": templateID.uuidString,
+            "startedAt": 0,
+            "sets": [[
+                "id": setID.uuidString,
+                "exerciseID": exerciseID.uuidString,
+                "exerciseName": "Bench Press",
+                "setNumber": 1,
+                "weight": 100,
+                "reps": 8,
+                "restSeconds": 120,
+                "isComplete": false
+            ]],
+            "notes": "legacy"
+        ]
+
+        let data = try JSONSerialization.data(withJSONObject: legacyJSON)
+        let restored = try JSONDecoder().decode(ActiveWorkoutDraft.self, from: data)
+
+        XCTAssertEqual(restored.templateID, templateID)
+        XCTAssertNil(restored.templateName)
+        XCTAssertNil(restored.exercises)
+        XCTAssertNil(restored.restDeadline)
+        XCTAssertNil(restored.restSourceSetID)
+        XCTAssertNil(restored.sets.first?.catalogID)
+        XCTAssertNil(restored.sets.first?.loadUnit)
     }
 
     private func session(id: UUID, day: Int, sets: [CompletedSet]) -> WorkoutSessionRecord {
@@ -396,6 +904,7 @@ final class WorkoutModelsTests: XCTestCase {
         number: Int,
         weight: Double,
         reps: Int,
+        loadUnit: LoadUnit? = nil,
         warmup: Bool = false
     ) -> CompletedSet {
         CompletedSet(
@@ -404,10 +913,50 @@ final class WorkoutModelsTests: XCTestCase {
             exerciseName: name,
             setNumber: number,
             weight: weight,
+            loadUnit: loadUnit,
             reps: reps,
             rpe: warmup ? 4 : 8,
             isWarmup: warmup,
             completedAt: Date(timeIntervalSince1970: TimeInterval(number))
+        )
+    }
+
+    private func progressionExercise(loadUnit: LoadUnit = .pounds) -> WorkoutExercise {
+        WorkoutExercise(
+            catalogID: "barbell-bench-press",
+            name: "Bench Press",
+            muscleGroup: .chest,
+            workingSets: 3,
+            targetReps: 6,
+            targetRepRangeUpper: 8,
+            targetWeight: 100,
+            loadUnit: loadUnit,
+            targetRPE: 8,
+            restSeconds: 120
+        )
+    }
+
+    private func progressionSession(
+        for exercise: WorkoutExercise,
+        day: Int,
+        weight: Double,
+        reps: Int,
+        loadUnit: LoadUnit = .pounds
+    ) -> WorkoutSessionRecord {
+        session(
+            id: UUID(),
+            day: day,
+            sets: (1...3).map { number in
+                set(
+                    exerciseID: exercise.id,
+                    catalogID: exercise.catalogID,
+                    name: exercise.name,
+                    number: number,
+                    weight: weight,
+                    reps: reps,
+                    loadUnit: loadUnit
+                )
+            }
         )
     }
 }

@@ -52,7 +52,7 @@ final class DailyTrainingStateBuilderTests: XCTestCase {
         XCTAssertTrue(state.dataQuality.permitsProgressionSuggestion)
 
         XCTAssertEqual(state.training.sessionsLast7Days, 2)
-        XCTAssertEqual(try XCTUnwrap(state.training.weeklyTrainingEffort), 1.6, accuracy: 0.000_1)
+        XCTAssertEqual(try XCTUnwrap(state.training.weeklyTrainingEffort), 2, accuracy: 0.000_1)
         XCTAssertEqual(try XCTUnwrap(state.training.loadVersus28DayAverage), 2, accuracy: 0.000_1)
         XCTAssertEqual(state.training.daysSinceTraining(exercise.primaryMuscleGroup), 2)
         XCTAssertEqual(state.training.mostRecentFocus, .upperBody)
@@ -73,6 +73,7 @@ final class DailyTrainingStateBuilderTests: XCTestCase {
         let evidenceByID = Dictionary(uniqueKeysWithValues: state.evidence.map { ($0.id, $0) })
         XCTAssertEqual(evidenceByID["readiness"]?.provenance, .calculated)
         XCTAssertEqual(evidenceByID["sleep"]?.provenance, .measured)
+        XCTAssertEqual(evidenceByID["recent-workouts"]?.provenance, .calculated)
         XCTAssertEqual(evidenceByID["lower-body-history"]?.provenance, .calculated)
         XCTAssertEqual(evidenceByID["available-time"]?.provenance, .userEntered)
         XCTAssertEqual(evidenceByID["equipment"]?.provenance, .userEntered)
@@ -180,6 +181,136 @@ final class DailyTrainingStateBuilderTests: XCTestCase {
             50,
             accuracy: 0.000_001
         )
+    }
+
+    func testNonUserEnteredHealthWorkoutIncreasesSevenDaySessionCount() {
+        let now = date(year: 2026, month: 9, day: 10, hour: 12)
+        let healthWorkout = MetricSample(
+            kind: .workout,
+            startDate: date(year: 2026, month: 9, day: 9, hour: 7),
+            endDate: date(year: 2026, month: 9, day: 9, hour: 8),
+            value: 60,
+            sourceName: "Apple Watch",
+            sourceBundleIdentifier: "com.apple.health.watch"
+        )
+
+        let state = DailyTrainingStateBuilder(calendar: calendar).makeState(
+            snapshot: healthSnapshot(now: now, samples: [healthWorkout]),
+            sessions: [],
+            constraints: WorkoutConstraints(availableMinutes: 45, equipmentProfile: .fullGym),
+            curatedPool: CuratedExerciseCatalog.makePool(from: []),
+            now: now
+        )
+
+        XCTAssertEqual(state.training.sessionsLast7Days, 1)
+        XCTAssertEqual(state.training.weeklyTrainingEffort, 0)
+        XCTAssertTrue(state.training.muscleRecency.isEmpty)
+        XCTAssertTrue(state.training.exerciseHistory.isEmpty)
+        XCTAssertEqual(state.evidence.first(where: { $0.id == "recent-workouts" })?.value, 1)
+    }
+
+    func testWorkoutSyncIdentifiersAreDeduplicatedOnlyWithinTheirWritingSource() {
+        let now = date(year: 2026, month: 9, day: 10, hour: 12)
+        let startedAt = date(year: 2026, month: 9, day: 9, hour: 7)
+        let first = healthWorkout(
+            id: UUID(),
+            syncIdentifier: "shared-identifier",
+            syncVersion: 1,
+            startedAt: startedAt
+        )
+        let second = MetricSample(
+            id: UUID(),
+            kind: .workout,
+            startDate: startedAt.addingTimeInterval(2 * 3600),
+            endDate: startedAt.addingTimeInterval(3 * 3600),
+            value: 60,
+            sourceName: "Another workout app",
+            sourceBundleIdentifier: "com.example.another-workout-app",
+            workoutSyncIdentifier: "shared-identifier",
+            workoutSyncVersion: 1
+        )
+
+        let state = DailyTrainingStateBuilder(calendar: calendar).makeState(
+            snapshot: healthSnapshot(now: now, samples: [first, second]),
+            sessions: [],
+            constraints: WorkoutConstraints(availableMinutes: 45, equipmentProfile: .fullGym),
+            curatedPool: CuratedExerciseCatalog.makePool(from: []),
+            now: now
+        )
+
+        XCTAssertEqual(state.training.sessionsLast7Days, 2)
+    }
+
+    func testHealthWorkoutDedupesLocalExportAndSyncVersions() {
+        let now = date(year: 2026, month: 9, day: 10, hour: 12)
+        let pool = CuratedExerciseCatalog.makePool(from: [])
+        let exercise = pool[0]
+        let local = session(
+            name: "Sleep Coach workout",
+            startedAt: date(year: 2026, month: 9, day: 8, hour: 7),
+            set: completedSet(for: exercise, weight: 100, rpe: 8)
+        )
+        let exportedCopy = healthWorkout(
+            id: UUID(),
+            syncIdentifier: local.id.uuidString,
+            syncVersion: 1,
+            startedAt: local.startedAt
+        )
+        let externalID = UUID()
+        let olderExternal = healthWorkout(
+            id: externalID,
+            syncIdentifier: "watch-session",
+            syncVersion: 1,
+            startedAt: date(year: 2026, month: 9, day: 9, hour: 7)
+        )
+        let replacementExternal = healthWorkout(
+            id: UUID(),
+            syncIdentifier: "watch-session",
+            syncVersion: 2,
+            startedAt: date(year: 2026, month: 9, day: 9, hour: 7)
+        )
+
+        let state = DailyTrainingStateBuilder(calendar: calendar).makeState(
+            snapshot: healthSnapshot(
+                now: now,
+                samples: [exportedCopy, olderExternal, replacementExternal]
+            ),
+            sessions: [local],
+            constraints: WorkoutConstraints(availableMinutes: 45, equipmentProfile: .fullGym),
+            curatedPool: pool,
+            now: now
+        )
+
+        XCTAssertEqual(state.training.sessionsLast7Days, 2)
+    }
+
+    func testUserEnteredAndOutOfWindowHealthWorkoutsDoNotAffectPlanner() {
+        let now = date(year: 2026, month: 9, day: 10, hour: 12)
+        let userEntered = MetricSample(
+            kind: .workout,
+            startDate: date(year: 2026, month: 9, day: 9, hour: 7),
+            endDate: date(year: 2026, month: 9, day: 9, hour: 8),
+            value: 60,
+            sourceName: "Health",
+            sourceBundleIdentifier: "com.apple.Health",
+            wasUserEntered: true
+        )
+        let oldWorkout = healthWorkout(
+            id: UUID(),
+            syncIdentifier: "old-watch-session",
+            syncVersion: 1,
+            startedAt: date(year: 2026, month: 9, day: 3, hour: 7)
+        )
+
+        let state = DailyTrainingStateBuilder(calendar: calendar).makeState(
+            snapshot: healthSnapshot(now: now, samples: [userEntered, oldWorkout]),
+            sessions: [],
+            constraints: WorkoutConstraints(availableMinutes: 45, equipmentProfile: .fullGym),
+            curatedPool: CuratedExerciseCatalog.makePool(from: []),
+            now: now
+        )
+
+        XCTAssertEqual(state.training.sessionsLast7Days, 0)
     }
 
     func testTrainingProfilePersistsAndReloadsFromPrivateState() throws {
@@ -331,7 +462,10 @@ final class DailyTrainingStateBuilderTests: XCTestCase {
         return session(name: "Baseline", startedAt: startedAt, set: set)
     }
 
-    private func healthSnapshot(now: Date) -> DailyHealthSnapshot {
+    private func healthSnapshot(
+        now: Date,
+        samples: [MetricSample] = []
+    ) -> DailyHealthSnapshot {
         let sleepEnd = date(year: 2026, month: 9, day: 10, hour: 7)
         let sleep = SleepSession(
             id: UUID(),
@@ -346,7 +480,7 @@ final class DailyTrainingStateBuilderTests: XCTestCase {
         )
         return DailyHealthSnapshot(
             generatedAt: now,
-            samples: [],
+            samples: samples,
             sleepSessions: [sleep],
             latestSleep: sleep,
             readinessAvailable: true,
@@ -384,6 +518,25 @@ final class DailyTrainingStateBuilderTests: XCTestCase {
             todaySignalOrder: MetricKind.decisionMetrics,
             sleepTimingVariability: .empty,
             recoveryTakeaway: "Recovery is close to baseline."
+        )
+    }
+
+    private func healthWorkout(
+        id: UUID,
+        syncIdentifier: String,
+        syncVersion: Int,
+        startedAt: Date
+    ) -> MetricSample {
+        MetricSample(
+            id: id,
+            kind: .workout,
+            startDate: startedAt,
+            endDate: startedAt.addingTimeInterval(45 * 60),
+            value: 45,
+            sourceName: "Apple Watch",
+            sourceBundleIdentifier: "com.apple.health.watch",
+            workoutSyncIdentifier: syncIdentifier,
+            workoutSyncVersion: syncVersion
         )
     }
 

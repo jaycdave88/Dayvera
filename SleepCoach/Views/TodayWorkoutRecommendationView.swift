@@ -87,7 +87,7 @@ struct TodayWorkoutRecommendationView: View {
         .fullScreenCover(item: $activeWorkout) { template in
             ActiveWorkoutView(
                 template: template,
-                adjustment: neutralAdjustment,
+                adjustment: generatedWorkoutAdjustment,
                 loadUnit: appModel.trainingProfile.loadUnit
             )
         }
@@ -425,15 +425,31 @@ struct TodayWorkoutRecommendationView: View {
         #endif
     }
 
-    private var neutralAdjustment: WorkoutAdjustment {
-        WorkoutAdjustment(
-            title: "As planned",
-            detail: "This workout already reflects today’s training state.",
-            volumeMultiplier: 1,
-            rpeCap: nil,
-            allowProgression: true
+    /// The planner has already applied today's set-volume envelope. Keep that
+    /// volume intact when launching the generated template, while preserving
+    /// recovery/safety and explicit "easier" progression gates.
+    private var generatedWorkoutAdjustment: WorkoutAdjustment {
+        generatedWorkoutLaunchAdjustment(
+            dailyAdjustment: appModel.plan.workoutAdjustment,
+            effort: plannedEffort
         )
     }
+}
+
+/// A generated plan already contains the deterministic set and RPE envelope,
+/// so launching it must not apply those reductions a second time. Progression
+/// remains gated by the daily recovery/safety decision and an easier request.
+func generatedWorkoutLaunchAdjustment(
+    dailyAdjustment: WorkoutAdjustment,
+    effort: PlannedEffort
+) -> WorkoutAdjustment {
+    WorkoutAdjustment(
+        title: "As planned",
+        detail: "This workout already reflects today’s training state.",
+        volumeMultiplier: 1,
+        rpeCap: nil,
+        allowProgression: dailyAdjustment.allowProgression && effort == .asPlanned
+    )
 }
 
 private struct WorkoutRecommendationInput: Hashable {

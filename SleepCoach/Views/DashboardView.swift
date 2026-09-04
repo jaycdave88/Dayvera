@@ -8,15 +8,18 @@ struct DashboardView: View {
     @State private var showingDebugRecoveryTrends = false
     let onOpenTrain: () -> Void
     let onOpenPlan: () -> Void
+    let onOpenRecoveryTrends: () -> Void
     let onOpenDataSources: () -> Void
 
     init(
         onOpenTrain: @escaping () -> Void = {},
         onOpenPlan: @escaping () -> Void = {},
+        onOpenRecoveryTrends: @escaping () -> Void = {},
         onOpenDataSources: @escaping () -> Void = {}
     ) {
         self.onOpenTrain = onOpenTrain
         self.onOpenPlan = onOpenPlan
+        self.onOpenRecoveryTrends = onOpenRecoveryTrends
         self.onOpenDataSources = onOpenDataSources
     }
 
@@ -304,9 +307,7 @@ struct DashboardView: View {
 
     private var recoveryTrendsNavigation: some View {
         VStack(spacing: 10) {
-            NavigationLink {
-                RecoveryTrendsView()
-            } label: {
+            Button(action: onOpenRecoveryTrends) {
                 HStack(spacing: 12) {
                     Image(systemName: "chart.xyaxis.line")
                         .font(.headline)
@@ -332,7 +333,7 @@ struct DashboardView: View {
                 .background(Color.coachSurface, in: RoundedRectangle(cornerRadius: 16))
             }
             .buttonStyle(.plain)
-            .accessibilityHint("Opens recovery history")
+            .accessibilityHint("Opens Recovery in the Progress tab")
         }
     }
 

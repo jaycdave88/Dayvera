@@ -3,7 +3,9 @@ import HealthKit
 
 protocol HealthDataProviding {
     var isAvailable: Bool { get }
+    var authorizationRequestSchema: HealthAuthorizationRequestSchema { get }
     func requestAuthorization() async throws
+    func authorizationRequestStatus() async throws -> HealthAccessRequestStatus
     func fetchSamples(since startDate: Date, through endDate: Date) async throws -> HealthSampleFetchResult
     func saveStrengthWorkout(
         sessionID: UUID,
@@ -15,6 +17,31 @@ protocol HealthDataProviding {
     func configureBackgroundDelivery(
         onUpdate: @escaping @MainActor @Sendable (HealthBackgroundEvent) async -> Void
     ) async throws
+}
+
+struct HealthAuthorizationRequestSchema: Codable, Equatable, Sendable {
+    let version: Int
+    let readTypeIdentifiers: Set<String>
+}
+
+/// Whether HealthKit believes presenting an authorization request may be useful.
+/// This never reports which read permissions were granted or denied.
+enum HealthAccessRequestStatus: Equatable, Sendable {
+    case shouldRequest
+    case unnecessary
+    case unknown
+}
+
+extension HealthDataProviding {
+    /// Test/demo providers can remain source-compatible. Production exposes the
+    /// exact current schema from HealthKitService.
+    var authorizationRequestSchema: HealthAuthorizationRequestSchema {
+        HealthAuthorizationRequestSchema(version: 0, readTypeIdentifiers: [])
+    }
+
+    func authorizationRequestStatus() async throws -> HealthAccessRequestStatus {
+        .unknown
+    }
 }
 
 /// The exact reason HealthKit invoked an observer. Keeping the triggering type
@@ -84,6 +111,19 @@ struct HealthQueryFailure: Identifiable, Hashable, Sendable {
 struct HealthSampleFetchResult: Sendable {
     let samples: [MetricSample]
     let queryFailures: [HealthQueryFailure]
+    /// Query types that completed, including types for which HealthKit returned
+    /// zero samples. This is execution coverage, not authorization status.
+    let successfulQueryTypeIdentifiers: Set<String>
+
+    init(
+        samples: [MetricSample],
+        queryFailures: [HealthQueryFailure],
+        successfulQueryTypeIdentifiers: Set<String> = []
+    ) {
+        self.samples = samples
+        self.queryFailures = queryFailures
+        self.successfulQueryTypeIdentifiers = successfulQueryTypeIdentifiers
+    }
 
     var isPartial: Bool { !queryFailures.isEmpty }
 }
@@ -106,8 +146,40 @@ final class HealthKitService: HealthDataProviding {
     static let readMetricTypeIdentifiers: Set<String> = [
         HKCategoryTypeIdentifier.sleepAnalysis.rawValue,
         HKQuantityTypeIdentifier.heartRateVariabilitySDNN.rawValue,
+        HKQuantityTypeIdentifier.restingHeartRate.rawValue,
+        HKQuantityTypeIdentifier.respiratoryRate.rawValue,
+        HKQuantityTypeIdentifier.oxygenSaturation.rawValue,
+        HKQuantityTypeIdentifier.appleSleepingWristTemperature.rawValue,
+        HKQuantityTypeIdentifier.bodyTemperature.rawValue,
+        HKQuantityTypeIdentifier.bodyMass.rawValue,
+        HKQuantityTypeIdentifier.bodyFatPercentage.rawValue,
+        HKQuantityTypeIdentifier.leanBodyMass.rawValue,
+        HKQuantityTypeIdentifier.bodyMassIndex.rawValue,
+        HKQuantityTypeIdentifier.heartRate.rawValue,
+        HKQuantityTypeIdentifier.activeEnergyBurned.rawValue,
+        HKQuantityTypeIdentifier.appleExerciseTime.rawValue,
+        HKQuantityTypeIdentifier.stepCount.rawValue,
+        HKObjectType.workoutType().identifier
+    ]
+
+    /// Only observe the three low-frequency signals that can materially change
+    /// the daily recommendation. A sleep/HRV/RHR update triggers a full bounded
+    /// refresh, which also picks up safety, activity, workout, and body context.
+    /// Observing raw heart rate, steps, and energy at `.immediate` would wake the
+    /// app repeatedly throughout the day without improving the current plan.
+    static let backgroundObservedTypeIdentifiers: Set<String> = [
+        HKCategoryTypeIdentifier.sleepAnalysis.rawValue,
+        HKQuantityTypeIdentifier.heartRateVariabilitySDNN.rawValue,
         HKQuantityTypeIdentifier.restingHeartRate.rawValue
     ]
+
+    /// Increment when the requested read registry changes. Existing installs
+    /// can compare this with their persisted schema and re-present HealthKit's
+    /// system sheet for newly added types without inferring individual grants.
+    static let currentAuthorizationRequestSchema = HealthAuthorizationRequestSchema(
+        version: 3,
+        readTypeIdentifiers: readMetricTypeIdentifiers
+    )
 
     init(store: HKHealthStore = HKHealthStore()) {
         self.store = store
@@ -124,14 +196,31 @@ final class HealthKitService: HealthDataProviding {
 
     var isAvailable: Bool { HKHealthStore.isHealthDataAvailable() }
 
+    var authorizationRequestSchema: HealthAuthorizationRequestSchema {
+        Self.currentAuthorizationRequestSchema
+    }
+
     private var readTypes: Set<HKObjectType> {
         var types: Set<HKObjectType> = []
         let identifiers: [HKQuantityTypeIdentifier] = [
             .heartRateVariabilitySDNN,
-            .restingHeartRate
+            .restingHeartRate,
+            .respiratoryRate,
+            .oxygenSaturation,
+            .appleSleepingWristTemperature,
+            .bodyTemperature,
+            .bodyMass,
+            .bodyFatPercentage,
+            .leanBodyMass,
+            .bodyMassIndex,
+            .heartRate,
+            .activeEnergyBurned,
+            .appleExerciseTime,
+            .stepCount
         ]
         identifiers.compactMap { HKObjectType.quantityType(forIdentifier: $0) }.forEach { types.insert($0) }
         if let sleep = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) { types.insert(sleep) }
+        types.insert(HKObjectType.workoutType())
         return types
     }
 
@@ -139,9 +228,37 @@ final class HealthKitService: HealthDataProviding {
         [HKObjectType.workoutType()]
     }
 
+    private var backgroundObservedTypes: [HKSampleType] {
+        readTypes.compactMap { $0 as? HKSampleType }
+            .filter { Self.backgroundObservedTypeIdentifiers.contains($0.identifier) }
+            .sorted { $0.identifier < $1.identifier }
+    }
+
     func requestAuthorization() async throws {
         guard isAvailable else { throw HealthDataError.unavailable }
         try await store.requestAuthorization(toShare: [], read: readTypes)
+    }
+
+    func authorizationRequestStatus() async throws -> HealthAccessRequestStatus {
+        guard isAvailable else { throw HealthDataError.unavailable }
+        return try await withCheckedThrowingContinuation { continuation in
+            store.underlyingHealthStore.getRequestStatusForAuthorization(
+                toShare: Set<HKSampleType>(),
+                read: readTypes
+            ) { status, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                let result: HealthAccessRequestStatus = switch status {
+                case .shouldRequest: .shouldRequest
+                case .unnecessary: .unnecessary
+                case .unknown: .unknown
+                @unknown default: .unknown
+                }
+                continuation.resume(returning: result)
+            }
+        }
     }
 
     func fetchSamples(since startDate: Date, through endDate: Date = .now) async throws -> HealthSampleFetchResult {
@@ -169,21 +286,27 @@ final class HealthKitService: HealthDataProviding {
                 }
             }
             var normalized: [MetricSample] = []
-            var successfulQueries = 0
+            var successfulTypeIdentifiers = Set<String>()
             var errors: [HealthQueryFailure] = []
             for await result in group {
                 normalized.append(contentsOf: result.samples)
                 if let failure = result.failure { errors.append(failure) }
-                else { successfulQueries += 1 }
             }
-            return (normalized, successfulQueries, errors)
+            // Empty successful queries have no normalized sample from which to
+            // recover an identifier, so derive them from the attempted set.
+            let failedIdentifiers = Set(errors.map(\.typeIdentifier))
+            successfulTypeIdentifiers.formUnion(
+                sampleTypes.map(\.identifier).filter { !failedIdentifiers.contains($0) }
+            )
+            return (normalized, successfulTypeIdentifiers, errors)
         }
-        guard outcome.1 > 0 else {
+        guard !outcome.1.isEmpty else {
             throw HealthDataError.queryFailed(outcome.2)
         }
         return HealthSampleFetchResult(
             samples: outcome.0.sorted { $0.startDate < $1.startDate },
-            queryFailures: outcome.2.sorted { $0.typeIdentifier < $1.typeIdentifier }
+            queryFailures: outcome.2.sorted { $0.typeIdentifier < $1.typeIdentifier },
+            successfulQueryTypeIdentifiers: outcome.1
         )
     }
 
@@ -225,13 +348,13 @@ final class HealthKitService: HealthDataProviding {
         for _ in 0..<2 {
             let task = try beginBackgroundDeliveryConfiguration(onUpdate: onUpdate)
             try await task.value
-            if Set(observersByTypeIdentifier.keys) == Self.readMetricTypeIdentifiers,
-               backgroundDeliveryEnabledTypeIdentifiers == Self.readMetricTypeIdentifiers {
+            if Set(observersByTypeIdentifier.keys) == Self.backgroundObservedTypeIdentifiers,
+               backgroundDeliveryEnabledTypeIdentifiers == Self.backgroundObservedTypeIdentifiers {
                 return
             }
         }
 
-        let missing = Self.readMetricTypeIdentifiers
+        let missing = Self.backgroundObservedTypeIdentifiers
             .subtracting(observersByTypeIdentifier.keys)
             .sorted()
             .first
@@ -251,9 +374,8 @@ final class HealthKitService: HealthDataProviding {
         onUpdate: @escaping @MainActor @Sendable (HealthBackgroundEvent) async -> Void
     ) throws -> Task<Void, Error> {
         guard isAvailable else { throw HealthDataError.unavailable }
-        let sampleTypes = readTypes.compactMap { $0 as? HKSampleType }
-            .sorted { $0.identifier < $1.identifier }
-        guard Set(sampleTypes.map(\.identifier)) == Self.readMetricTypeIdentifiers else {
+        let sampleTypes = backgroundObservedTypes
+        guard Set(sampleTypes.map(\.identifier)) == Self.backgroundObservedTypeIdentifiers else {
             throw HealthDataError.backgroundDeliveryConfigurationFailed(
                 typeIdentifier: nil,
                 message: "One or more requested Apple Health data types are unavailable."
@@ -368,19 +490,48 @@ final class HealthKitService: HealthDataProviding {
     }
 
     static func diagnostics(from samples: [MetricSample]) -> [SourceDiagnostic] {
-        let groups = Dictionary(grouping: samples) { "\($0.sourceBundleIdentifier)|\($0.kind.rawValue)" }
+        let calendar = Calendar.current
+        let groups = Dictionary(grouping: samples) { "\($0.sourceIdentity)|\($0.kind.rawValue)" }
         return groups.values.compactMap { group in
-            guard let sample = group.first else { return nil }
+            guard let sample = group.max(by: { $0.endDate < $1.endDate }) else { return nil }
+            let devices = Array(Set(group.compactMap(\.device))).sorted {
+                if $0.displayName == $1.displayName {
+                    return ($0.model ?? "") < ($1.model ?? "")
+                }
+                return $0.displayName < $1.displayName
+            }
             return SourceDiagnostic(
                 sourceName: sample.sourceName,
                 bundleIdentifier: sample.sourceBundleIdentifier,
+                sourceProductType: sample.sourceProductType,
                 kind: sample.kind,
                 sampleCount: group.count,
-                latestSample: group.map(\.endDate).max()
+                userEnteredSampleCount: group.filter(\.wasUserEntered).count,
+                latestSample: group.map(\.endDate).max(),
+                firstSample: group.map(\.startDate).min(),
+                observedDayCount: Set(group.map { calendar.startOfDay(for: $0.endDate) }).count,
+                devices: devices
             )
         }.sorted {
             if $0.vendorLabel == $1.vendorLabel { return $0.kind.title < $1.kind.title }
             return $0.vendorLabel < $1.vendorLabel
+        }
+    }
+
+    static func observedCoverage(from samples: [MetricSample]) -> [MetricObservedCoverage] {
+        let calendar = Calendar.current
+        let samplesByKind = Dictionary(grouping: samples, by: \.kind)
+        return MetricKind.healthReadMetrics.map { kind in
+            let matching = samplesByKind[kind] ?? []
+            return MetricObservedCoverage(
+                kind: kind,
+                sampleCount: matching.count,
+                observedDayCount: Set(matching.map { calendar.startOfDay(for: $0.endDate) }).count,
+                firstSample: matching.map(\.startDate).min(),
+                latestSample: matching.map(\.endDate).max(),
+                sourceCount: Set(matching.map(\.sourceIdentity)).count,
+                deviceCount: Set(matching.compactMap(\.device)).count
+            )
         }
     }
 
@@ -404,30 +555,40 @@ final class HealthKitService: HealthDataProviding {
         }
     }
 
-    private static func queryStartDate(for type: HKSampleType, requestedStart: Date, endDate: Date) -> Date {
+    static func queryStartDate(for type: HKSampleType, requestedStart: Date, endDate: Date) -> Date {
         let shortWindowIdentifiers: Set<String> = [
-            HKQuantityTypeIdentifier.heartRate.rawValue,
             HKQuantityTypeIdentifier.activeEnergyBurned.rawValue,
             HKQuantityTypeIdentifier.stepCount.rawValue,
             HKQuantityTypeIdentifier.appleExerciseTime.rawValue
         ]
-        guard shortWindowIdentifiers.contains(type.identifier) else { return requestedStart }
-        return max(requestedStart, endDate.addingTimeInterval(-3 * 24 * 3600))
+        if shortWindowIdentifiers.contains(type.identifier) {
+            return max(requestedStart, endDate.addingTimeInterval(-3 * 24 * 3600))
+        }
+        // Raw heart-rate samples are high-volume. Twenty-one days is enough for
+        // the approved nightly baseline while keeping each query bounded.
+        if type.identifier == HKQuantityTypeIdentifier.heartRate.rawValue {
+            return max(requestedStart, endDate.addingTimeInterval(-21 * 24 * 3600))
+        }
+        return requestedStart
     }
 
-    private static func sampleLimit(for type: HKSampleType) -> Int {
+    static func sampleLimit(for type: HKSampleType) -> Int {
         if type == HKObjectType.workoutType() { return 500 }
         return switch type.identifier {
         case HKCategoryTypeIdentifier.sleepAnalysis.rawValue: 4_000
-        case HKQuantityTypeIdentifier.heartRate.rawValue: 1_200
+        case HKQuantityTypeIdentifier.heartRate.rawValue: 20_000
         default: 1_000
         }
     }
 
-    private static func normalize(_ sample: HKSample) -> MetricSample? {
+    static func normalize(_ sample: HKSample) -> MetricSample? {
         let source = sample.sourceRevision.source
         let sourceName = source.name
         let bundle = source.bundleIdentifier
+        let sourceProductType = sample.sourceRevision.productType
+        let device = deviceProvenance(sample.device)
+        let metadata = sample.metadata ?? [:]
+        let wasUserEntered = (metadata[HKMetadataKeyWasUserEntered] as? NSNumber)?.boolValue ?? false
 
         if let category = sample as? HKCategorySample,
            category.categoryType.identifier == HKCategoryTypeIdentifier.sleepAnalysis.rawValue {
@@ -438,7 +599,10 @@ final class HealthKitService: HealthDataProviding {
                 endDate: category.endDate,
                 sleepStage: sleepStage(for: category.value),
                 sourceName: sourceName,
-                sourceBundleIdentifier: bundle
+                sourceBundleIdentifier: bundle,
+                sourceProductType: sourceProductType,
+                device: device,
+                wasUserEntered: wasUserEntered
             )
         }
 
@@ -450,7 +614,12 @@ final class HealthKitService: HealthDataProviding {
                 endDate: workout.endDate,
                 value: workout.duration / 60,
                 sourceName: sourceName,
-                sourceBundleIdentifier: bundle
+                sourceBundleIdentifier: bundle,
+                sourceProductType: sourceProductType,
+                device: device,
+                wasUserEntered: wasUserEntered,
+                workoutSyncIdentifier: metadata[HKMetadataKeySyncIdentifier] as? String,
+                workoutSyncVersion: (metadata[HKMetadataKeySyncVersion] as? NSNumber)?.intValue
             )
         }
 
@@ -464,7 +633,21 @@ final class HealthKitService: HealthDataProviding {
             endDate: quantity.endDate,
             value: value,
             sourceName: sourceName,
-            sourceBundleIdentifier: bundle
+            sourceBundleIdentifier: bundle,
+            sourceProductType: sourceProductType,
+            device: device,
+            wasUserEntered: wasUserEntered
+        )
+    }
+
+    private static func deviceProvenance(_ device: HKDevice?) -> HealthDeviceProvenance? {
+        guard let device else { return nil }
+        // HKDevice.name may contain the person's custom device name. Hardware,
+        // firmware, and software versions add fingerprinting surface without
+        // helping source selection, so production retains only broad maker/model.
+        return HealthDeviceProvenance(
+            manufacturer: device.manufacturer,
+            model: device.model
         )
     }
 
@@ -476,6 +659,11 @@ final class HealthKitService: HealthDataProviding {
         case HKQuantityTypeIdentifier.respiratoryRate.rawValue: .respiratoryRate
         case HKQuantityTypeIdentifier.oxygenSaturation.rawValue: .oxygenSaturation
         case HKQuantityTypeIdentifier.appleSleepingWristTemperature.rawValue: .sleepingWristTemperature
+        case HKQuantityTypeIdentifier.bodyTemperature.rawValue: .bodyTemperature
+        case HKQuantityTypeIdentifier.bodyMass.rawValue: .bodyMass
+        case HKQuantityTypeIdentifier.bodyFatPercentage.rawValue: .bodyFatPercentage
+        case HKQuantityTypeIdentifier.leanBodyMass.rawValue: .leanBodyMass
+        case HKQuantityTypeIdentifier.bodyMassIndex.rawValue: .bodyMassIndex
         case HKQuantityTypeIdentifier.activeEnergyBurned.rawValue: .activeEnergy
         case HKQuantityTypeIdentifier.stepCount.rawValue: .steps
         case HKQuantityTypeIdentifier.appleExerciseTime.rawValue: .exerciseMinutes
@@ -499,8 +687,14 @@ final class HealthKitService: HealthDataProviding {
             sample.quantity.doubleValue(for: HKUnit.count().unitDivided(by: .minute()))
         case .oxygenSaturation:
             sample.quantity.doubleValue(for: .percent()) * 100
-        case .sleepingWristTemperature:
+        case .sleepingWristTemperature, .bodyTemperature:
             sample.quantity.doubleValue(for: .degreeCelsius())
+        case .bodyMass, .leanBodyMass:
+            sample.quantity.doubleValue(for: .gramUnit(with: .kilo))
+        case .bodyFatPercentage:
+            sample.quantity.doubleValue(for: .percent()) * 100
+        case .bodyMassIndex:
+            sample.quantity.doubleValue(for: .count())
         case .activeEnergy:
             sample.quantity.doubleValue(for: .kilocalorie())
         case .steps:
@@ -553,6 +747,15 @@ enum HealthDataError: LocalizedError {
             case .some(HKCategoryTypeIdentifier.sleepAnalysis.rawValue): "sleep"
             case .some(HKQuantityTypeIdentifier.heartRateVariabilitySDNN.rawValue): "heart rate variability"
             case .some(HKQuantityTypeIdentifier.restingHeartRate.rawValue): "resting heart rate"
+            case .some(HKQuantityTypeIdentifier.respiratoryRate.rawValue): "respiratory rate"
+            case .some(HKQuantityTypeIdentifier.oxygenSaturation.rawValue): "blood oxygen"
+            case .some(HKQuantityTypeIdentifier.appleSleepingWristTemperature.rawValue): "sleeping wrist temperature"
+            case .some(HKQuantityTypeIdentifier.bodyTemperature.rawValue): "body temperature"
+            case .some(HKQuantityTypeIdentifier.heartRate.rawValue): "heart rate"
+            case .some(HKQuantityTypeIdentifier.activeEnergyBurned.rawValue): "active energy"
+            case .some(HKQuantityTypeIdentifier.appleExerciseTime.rawValue): "exercise minutes"
+            case .some(HKQuantityTypeIdentifier.stepCount.rawValue): "steps"
+            case .some(let identifier) where identifier == HKObjectType.workoutType().identifier: "workouts"
             case .some(_): "one requested data type"
             case nil: "all requested data types"
             }

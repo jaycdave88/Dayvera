@@ -16,6 +16,11 @@ struct DataSourcesView: View {
                 queryIssues
             }
 
+            safetyChecks
+            trainingContext
+            bodyCompositionContext
+            providerMatrix
+            observedCoverage
             observedSources
             confidenceExplanation
         }
@@ -79,6 +84,15 @@ struct DataSourcesView: View {
                     .foregroundStyle(Color.coachAmber)
             }
 
+            if appModel.healthAccessReviewRecommended {
+                Label(
+                    "Review Health access to include expanded recovery, activity, and body-measurement categories.",
+                    systemImage: "exclamationmark.circle.fill"
+                )
+                .font(.caption)
+                .foregroundStyle(Color.coachAmber)
+            }
+
             healthAction
         } header: {
             Text("Health data")
@@ -110,6 +124,11 @@ struct DataSourcesView: View {
                 }
             }
             .disabled(appModel.isRefreshing)
+            .frame(minHeight: 44)
+
+            Button("Review Health Access", systemImage: "checklist") {
+                Task { await appModel.connectHealth() }
+            }
             .frame(minHeight: 44)
         }
     }
@@ -165,17 +184,164 @@ struct DataSourcesView: View {
                 Text("No readable samples yet. In Eight Sleep and Hume, enable Apple Health sharing, then refresh after those apps finish syncing.")
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(appModel.diagnostics.filter { MetricKind.decisionMetrics.contains($0.kind) }) { item in
+                ForEach(appModel.diagnostics) { item in
                     SourceObservationRow(
                         diagnostic: item,
-                        usedNow: trend(for: item.kind).sourceBundleIdentifier == item.bundleIdentifier
+                        usedNow: selectedSourceBundle(for: item.kind) == item.bundleIdentifier
                     )
                 }
             }
         } header: {
             Text("Sources found in Apple Health")
         } footer: {
-            Text("Overlapping sources are never averaged. “Using” identifies the source that supplies the displayed trend and any enabled workout guidance.")
+            Text("Overlapping sources are never mixed into a personal baseline. “Using” identifies a selected core source; safety checks also show their same-source selection above.")
+        }
+    }
+
+    private var safetyChecks: some View {
+        Section {
+            DataValueRow(label: "Recommendation effect", value: safetyEffectText)
+
+            ForEach(appModel.snapshot.safetyGate.signals) { signal in
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Label(signal.kind.title, systemImage: signal.kind.signalSymbol)
+                            .font(.subheadline.weight(.semibold))
+                        Spacer(minLength: 8)
+                        Text(signal.state == .outlier ? "Check" : "Neutral")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(signal.state == .outlier ? Color.coachAmber : .secondary)
+                    }
+                    Text(signal.statusText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if let current = signal.currentValue {
+                        Text(safetyValueText(signal, current: current))
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                    if let sourceName = signal.sourceName {
+                        Text("Source: \(sourceName)")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                .padding(.vertical, 3)
+                .accessibilityElement(children: .combine)
+            }
+        } header: {
+            Text("Safety-only checks")
+        } footer: {
+            Text("A check needs a fresh value and at least 14 nights in a 21-day same-source baseline. One outlier pauses progression; two or more cap readiness at Moderate and reduce the pre-check volume by 10%. Missing, stale, and early-baseline signals are neutral. These signals never raise readiness and are not a medical diagnosis.")
+        }
+    }
+
+    private var trainingContext: some View {
+        let context = appModel.snapshot.trainingContext
+        return Section {
+            DataValueRow(
+                label: "Yesterday’s active energy",
+                value: observedValue(context.previousDayActiveEnergy, unit: MetricKind.activeEnergy.unit)
+            )
+            DataValueRow(
+                label: "Yesterday’s exercise",
+                value: observedValue(context.previousDayExerciseMinutes, unit: MetricKind.exerciseMinutes.unit)
+            )
+            DataValueRow(
+                label: "Yesterday’s steps",
+                value: observedValue(context.previousDaySteps, unit: MetricKind.steps.unit)
+            )
+            DataValueRow(
+                label: "Workouts · last 7 days",
+                value: context.workoutsLastSevenDays == 0
+                    ? "No samples observed"
+                    : "\(context.workoutsLastSevenDays)"
+            )
+            DataValueRow(
+                label: "Workout time · last 7 days",
+                value: observedValue(context.workoutMinutesLastSevenDays, unit: MetricKind.workout.unit)
+            )
+        } header: {
+            Text("Training context")
+        } footer: {
+            Text("These activity records provide context only; they are not folded into a proprietary recovery score.")
+        }
+    }
+
+    private var bodyCompositionContext: some View {
+        Section {
+            ForEach(MetricKind.bodyCompositionMetrics, id: \.self) { metric in
+                let sample = latestObservedSample(for: metric)
+                VStack(alignment: .leading, spacing: 3) {
+                    DataValueRow(
+                        label: metric.title,
+                        value: bodyCompositionValue(sample, kind: metric)
+                    )
+                    if let sample {
+                        Text("Latest observed from \(sample.sourceName)")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+        } header: {
+            Text("Body composition context")
+        } footer: {
+            Text("Shows standard body measurements actually received from Apple Health. These values are progress context only and never change readiness, safety checks, or today’s workout. Proprietary Hume measurements without an Apple Health equivalent remain in Hume.")
+        }
+    }
+
+    private var observedCoverage: some View {
+        Section {
+            ForEach(HealthKitService.observedCoverage(from: appModel.snapshot.samples)) { coverage in
+                MetricCoverageRow(coverage: coverage)
+            }
+        } header: {
+            Text("Observed coverage")
+        } footer: {
+            Text("Coverage reports only readable samples received in the fetched window. “No samples observed” does not mean access was denied; Apple Health intentionally does not disclose read denial.")
+        }
+    }
+
+    private var providerMatrix: some View {
+        Section {
+            ForEach(providerSummaries) { summary in
+                ProviderObservationRow(summary: summary)
+            }
+        } header: {
+            Text("Provider observations")
+        } footer: {
+            Text("These rows report only samples actually observed in Apple Health. “Not received” is not a claim about device support, sensor availability, or denied access.")
+        }
+    }
+
+    private var providerSummaries: [ProviderObservationSummary] {
+        let definitions: [(name: String, terms: [String])] = [
+            ("Eight Sleep", ["eight"]),
+            ("Hume", ["hume", "fittrack"]),
+            ("Apple Watch", ["apple watch", "watch"])
+        ]
+        return definitions.map { definition in
+            let matches = appModel.diagnostics.filter { diagnostic in
+                let deviceText = diagnostic.devices.flatMap {
+                    [$0.manufacturer, $0.model].compactMap { $0 }
+                }.joined(separator: " ")
+                let searchable = [
+                    diagnostic.sourceName,
+                    diagnostic.bundleIdentifier,
+                    diagnostic.sourceProductType,
+                    deviceText
+                ].compactMap { $0 }.joined(separator: " ").lowercased()
+                return definition.terms.contains { searchable.contains($0) }
+            }
+            return ProviderObservationSummary(
+                name: definition.name,
+                sampleCount: matches.reduce(0) { $0 + $1.sampleCount },
+                metrics: MetricKind.healthReadMetrics.filter(Set(matches.map(\.kind)).contains),
+                latestSample: matches.compactMap(\.latestSample).max(),
+                referenceDate: appModel.snapshot.generatedAt
+            )
         }
     }
 
@@ -196,6 +362,49 @@ struct DataSourcesView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    private var safetyEffectText: String {
+        let gate = appModel.snapshot.safetyGate
+        if gate.capsReadinessAtModerate {
+            return "Readiness capped · volume × 90% · progression paused"
+        }
+        if gate.blocksProgression {
+            return "Core readiness unchanged · progression paused"
+        }
+        return "No safety-only restriction"
+    }
+
+    private func safetyValueText(
+        _ signal: SafetySignalEvaluation,
+        current: Double
+    ) -> String {
+        let value = current.formatted(.number.precision(.fractionLength(0...2)))
+        guard let baseline = signal.baselineMedian else {
+            return "Latest \(value) \(signal.kind.unit) · no established baseline"
+        }
+        let baselineText = baseline.formatted(.number.precision(.fractionLength(0...2)))
+        return "Latest \(value) \(signal.kind.unit) · baseline \(baselineText) · \(signal.baselineNightCount) nights"
+    }
+
+    private func observedValue(_ value: Double?, unit: String) -> String {
+        guard let value else { return "No samples observed" }
+        return "\(value.formatted(.number.precision(.fractionLength(0...1)))) \(unit)"
+    }
+
+    private func latestObservedSample(for kind: MetricKind) -> MetricSample? {
+        appModel.snapshot.samples
+            .filter { $0.kind == kind && !$0.wasUserEntered && $0.value != nil }
+            .max { $0.endDate < $1.endDate }
+    }
+
+    private func bodyCompositionValue(_ sample: MetricSample?, kind: MetricKind) -> String {
+        guard let value = sample?.value else { return "No samples observed" }
+        return bodyCompositionDisplayValue(
+            value: value,
+            kind: kind,
+            loadUnit: appModel.trainingProfile.loadUnit
+        )
     }
 
     private var usedSignalCount: Int {
@@ -249,6 +458,13 @@ struct DataSourcesView: View {
         case .restingHeartRate: appModel.snapshot.restingHeartRateTrend
         default: .empty(kind: metric, referenceLabel: "Reference")
         }
+    }
+
+    private func selectedSourceBundle(for metric: MetricKind) -> String? {
+        if let safety = appModel.snapshot.safetyGate.signals.first(where: { $0.kind == metric }) {
+            return safety.sourceBundleIdentifier
+        }
+        return trend(for: metric).sourceBundleIdentifier
     }
 
     private func moveSignals(from offsets: IndexSet, to destination: Int) {
@@ -514,8 +730,7 @@ private struct SignalSourceSettingsView: View {
     }
 
     private var sourcePreferenceExplanation: String {
-        let preferred = metric == .sleep ? "Eight Sleep" : "Hume"
-        return "Automatic prefers fresh \(preferred) data, then uses the freshest observed source. This changes Sleep Coach’s calculation, not Apple Health permissions."
+        "Automatic ranks usable freshness first, then observed-day coverage, then the latest sample; vendor name is only a tie-breaker. This changes Sleep Coach’s calculation, not Apple Health permissions."
     }
 
     private var sourceSelectionBinding: Binding<String> {
@@ -569,6 +784,43 @@ private struct SignalSourceSettingsView: View {
     }
 }
 
+private struct MetricCoverageRow: View {
+    let coverage: MetricObservedCoverage
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: coverage.kind.signalSymbol)
+                .foregroundStyle(coverage.hasObservedSamples ? Color.coachMint : .secondary)
+                .frame(width: 24)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(coverage.kind.title)
+                    .font(.subheadline.weight(.semibold))
+                if coverage.hasObservedSamples {
+                    Text("\(coverage.sampleCount) samples · \(coverage.observedDayCount) observed days")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("\(coverage.sourceCount) sources · \(coverage.deviceCount) identified devices")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                } else {
+                    Text("No readable samples observed")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer(minLength: 0)
+            if let latest = coverage.latestSample {
+                Text(latest, format: .dateTime.month(.abbreviated).day())
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
+    }
+}
+
 private struct SourceObservationRow: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let diagnostic: SourceDiagnostic
@@ -588,7 +840,7 @@ private struct SourceObservationRow: View {
                     if usedNow { StateTag(text: "Using", emphasized: true) }
                 }
             }
-            Text("\(diagnostic.kind.title) · \(diagnostic.sampleCount) samples")
+            Text("\(diagnostic.kind.title) · \(diagnostic.sampleCount) samples across \(diagnostic.observedDayCount) days")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Text("Latest \(diagnostic.latestSample?.formatted(date: .abbreviated, time: .shortened) ?? "unknown")")
@@ -598,6 +850,29 @@ private struct SourceObservationRow: View {
                 .font(.caption2.monospaced())
                 .foregroundStyle(.tertiary)
                 .textSelection(.enabled)
+            if let productType = diagnostic.sourceProductType {
+                Text("Product type: \(productType)")
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.tertiary)
+                    .textSelection(.enabled)
+            }
+            if diagnostic.userEnteredSampleCount > 0 {
+                Text("\(diagnostic.userEnteredSampleCount) user-entered samples · excluded from automatic health guidance")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            if diagnostic.devices.isEmpty {
+                Text("Device details not supplied with these samples")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            } else {
+                ForEach(diagnostic.devices, id: \.self) { device in
+                    Text(device.detailText.map { "Device: \(device.displayName) · \($0)" }
+                        ?? "Device: \(device.displayName)")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
         }
         .padding(.vertical, 3)
         .accessibilityElement(children: .combine)
@@ -606,6 +881,97 @@ private struct SourceObservationRow: View {
     private var sourceTitle: some View {
         Text(diagnostic.vendorLabel)
             .font(.headline)
+    }
+}
+
+private struct ProviderObservationSummary: Identifiable {
+    enum Status: String {
+        case receivedRecently = "Received recently"
+        case previouslyReceived = "Previously received"
+        case notReceived = "Not received"
+    }
+
+    var id: String { name }
+    let name: String
+    let sampleCount: Int
+    let metrics: [MetricKind]
+    let latestSample: Date?
+    let status: Status
+
+    init(
+        name: String,
+        sampleCount: Int,
+        metrics: [MetricKind],
+        latestSample: Date?,
+        referenceDate: Date
+    ) {
+        self.name = name
+        self.sampleCount = sampleCount
+        self.metrics = metrics
+        self.latestSample = latestSample
+        if let latestSample {
+            status = latestSample >= referenceDate.addingTimeInterval(-72 * 3600)
+                ? .receivedRecently
+                : .previouslyReceived
+        } else {
+            status = .notReceived
+        }
+    }
+}
+
+private struct ProviderObservationRow: View {
+    let summary: ProviderObservationSummary
+
+    @ViewBuilder
+    var body: some View {
+        if summary.metrics.isEmpty {
+            providerLabel
+                .accessibilityElement(children: .combine)
+        } else {
+            DisclosureGroup {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(summary.metrics, id: \.self) { metric in
+                        Label(metric.title, systemImage: "checkmark")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.top, 4)
+            } label: {
+                providerLabel
+            }
+            .accessibilityHint("Shows the metric types actually received from this provider")
+        }
+    }
+
+    private var providerLabel: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: summary.status == .receivedRecently
+                ? "checkmark.circle.fill"
+                : "clock.badge.questionmark")
+                .foregroundStyle(summary.status == .receivedRecently ? Color.coachMint : .secondary)
+                .frame(width: 24)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(summary.name)
+                    .font(.subheadline.weight(.semibold))
+                Text(summary.status.rawValue)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(summary.sampleCount == 0
+                    ? "0 observed samples"
+                    : "\(summary.sampleCount) samples · \(summary.metrics.count) metric types")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            Spacer(minLength: 0)
+            if let latestSample = summary.latestSample {
+                Text(latestSample, format: .dateTime.month(.abbreviated).day())
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 2)
     }
 }
 
@@ -654,7 +1020,18 @@ private extension MetricKind {
         case .sleep: "bed.double.fill"
         case .heartRateVariability: "waveform.path.ecg"
         case .restingHeartRate: "heart.fill"
-        default: "chart.xyaxis.line"
+        case .heartRate: "heart.text.square.fill"
+        case .respiratoryRate: "lungs.fill"
+        case .oxygenSaturation: "drop.fill"
+        case .sleepingWristTemperature, .bodyTemperature: "thermometer.medium"
+        case .bodyMass: "scalemass.fill"
+        case .bodyFatPercentage: "percent"
+        case .leanBodyMass: "figure.strengthtraining.traditional"
+        case .bodyMassIndex: "chart.xyaxis.line"
+        case .activeEnergy: "flame.fill"
+        case .steps: "figure.walk"
+        case .exerciseMinutes: "timer"
+        case .workout: "dumbbell.fill"
         }
     }
 }

@@ -8,6 +8,7 @@ private enum AppTab: String, Hashable {
         let arguments = ProcessInfo.processInfo.arguments
         #if DEBUG
         if arguments.contains("--show-data-sources")
+            || arguments.contains("--show-calendar-setup")
             || arguments.contains(where: { $0.hasPrefix("--show-signal-source=") }) {
             return .today
         }
@@ -55,6 +56,7 @@ private enum LaunchDestination {
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         return arguments.contains("--show-data-sources")
+            || arguments.contains("--show-calendar-setup")
             || arguments.contains(where: { $0.hasPrefix("--show-signal-source=") })
             || arguments.contains("--tab=settings")
         #else
@@ -69,6 +71,14 @@ private enum LaunchDestination {
             || arguments.contains(where: { $0.hasPrefix("--show-signal-source=") })
         #else
         return false
+        #endif
+    }
+
+    static var showsCalendarSetup: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.arguments.contains("--show-calendar-setup")
+        #else
+        false
         #endif
     }
 
@@ -101,8 +111,10 @@ struct RootView: View {
     @State private var showingSettings = LaunchDestination.showsSettings
     @State private var showingDataSources = false
     @State private var pendingDataSources = LaunchDestination.showsDataSources
+    @State private var showingCalendarSetup = false
+    @State private var pendingCalendarSetup = LaunchDestination.showsCalendarSetup
     @State private var showingExerciseLibrary = LaunchDestination.showsExerciseLibrary
-    private let initialProgressSection = LaunchDestination.progressSection
+    @State private var progressSection = LaunchDestination.progressSection
 
     var body: some View {
         TabView(selection: $selection) {
@@ -110,6 +122,10 @@ struct RootView: View {
                 DashboardView(
                     onOpenTrain: { selection = .train },
                     onOpenPlan: { selection = .plan },
+                    onOpenRecoveryTrends: {
+                        progressSection = .recovery
+                        selection = .progress
+                    },
                     onOpenDataSources: {
                         selection = .today
                         pendingDataSources = true
@@ -127,12 +143,20 @@ struct RootView: View {
                     }
                 }
                 .navigationDestination(isPresented: $showingSettings) {
-                    SettingsView(showingDataSources: $showingDataSources)
+                    SettingsView(
+                        showingDataSources: $showingDataSources,
+                        showingCalendarSetup: $showingCalendarSetup
+                    )
                         .task {
-                            guard pendingDataSources else { return }
-                            pendingDataSources = false
-                            await Task.yield()
-                            showingDataSources = true
+                            if pendingDataSources {
+                                pendingDataSources = false
+                                await Task.yield()
+                                showingDataSources = true
+                            } else if pendingCalendarSetup {
+                                pendingCalendarSetup = false
+                                await Task.yield()
+                                showingCalendarSetup = true
+                            }
                         }
                 }
             }
@@ -149,7 +173,7 @@ struct RootView: View {
             }
                 .tabItem { Label("Train", systemImage: "figure.strengthtraining.traditional") }
                 .tag(AppTab.train)
-            NavigationStack { ProgressView(initialSection: initialProgressSection) }
+            NavigationStack { ProgressView(section: $progressSection) }
                 .tabItem { Label("Progress", systemImage: "chart.xyaxis.line") }
                 .tag(AppTab.progress)
         }

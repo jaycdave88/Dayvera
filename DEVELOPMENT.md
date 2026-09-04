@@ -58,6 +58,7 @@ Focused routes are also available:
 - `--demo-health-partial` simulates an HRV query failure.
 - `--demo-applied-plan` shows the persistent applied-plan state.
 - `--show-data-sources` opens Data & Sources.
+- `--show-calendar-setup` opens the source-grouped planning, Workout details, and Busy destination controls.
 - `--show-signal-source=<sleep|heartRateVariability|restingHeartRate>` opens one signal's source controls.
 - `--show-exercise=<repdb-id>` opens a matching catalog exercise.
 - `--show-template-editor` opens a new template.

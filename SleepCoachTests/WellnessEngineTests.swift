@@ -8,7 +8,7 @@ final class WellnessEngineTests: XCTestCase {
         return value
     }
 
-    func testEightSleepWinsOverLongerHumeSession() {
+    func testLatestSourceWinsWhenCoverageTiesBeforeVendorPreference() {
         let engine = WellnessEngine(calendar: calendar)
         let day = date(2026, 9, 3, 0, 0)
         let samples = [
@@ -19,8 +19,8 @@ final class WellnessEngineTests: XCTestCase {
         let sessions = engine.reconstructSleepSessions(from: samples)
 
         XCTAssertEqual(sessions.count, 1)
-        XCTAssertEqual(sessions.first?.sourceName, "Eight Sleep")
-        XCTAssertEqual(sessions.first?.asleepMinutes ?? 0, 420, accuracy: 0.01)
+        XCTAssertEqual(sessions.first?.sourceName, "Hume")
+        XCTAssertEqual(sessions.first?.asleepMinutes ?? 0, 540, accuracy: 0.01)
     }
 
     func testOverlappingSleepStagesAreNotDoubleCounted() {
@@ -85,6 +85,44 @@ final class WellnessEngineTests: XCTestCase {
         let session = engine.reconstructSleepSessions(from: samples).first
 
         XCTAssertEqual(session?.sourceName, "Apple Watch")
+    }
+
+    func testAutomaticSourceUsesObservedDayCoverageBeforeVendorTieBreak() {
+        let engine = WellnessEngine(calendar: calendar)
+        let now = date(2026, 9, 22, 9, 0)
+        var samples = [
+            metric(
+                .heartRateVariability,
+                value: 90,
+                at: date(2026, 9, 22, 8, 0),
+                source: "Hume",
+                bundle: "com.fittrack.hume"
+            ),
+            metric(
+                .heartRateVariability,
+                value: 55,
+                at: date(2026, 9, 22, 7, 0),
+                source: "Apple Watch",
+                bundle: "com.apple.health",
+                productType: "Watch7,5"
+            )
+        ]
+        for offset in 1...14 {
+            samples.append(metric(
+                .heartRateVariability,
+                value: 50,
+                at: calendar.date(byAdding: .day, value: -offset, to: date(2026, 9, 22, 7, 0))!,
+                source: "Apple Watch",
+                bundle: "com.apple.health",
+                productType: "Watch7,5"
+            ))
+        }
+
+        let snapshot = engine.snapshot(from: samples, preferences: .default, now: now)
+
+        XCTAssertEqual(snapshot.hrvTrend.sourceBundleIdentifier, "com.apple.health")
+        XCTAssertEqual(snapshot.latestHRV, 55)
+        XCTAssertTrue(snapshot.hrvTrend.sourceHealth.reason.contains("15 observed days"))
     }
 
     func testOnePositiveNightDoesNotAllowProgression() {
@@ -422,6 +460,272 @@ final class WellnessEngineTests: XCTestCase {
         XCTAssertTrue(snapshot.sleepTrend.sourceHealth.reason.contains(requestedBundle))
     }
 
+    func testOneFreshSafetyOutlierPausesProgressionWithoutChangingCoreReadiness() {
+        let engine = WellnessEngine(calendar: calendar)
+        let now = date(2026, 9, 22, 9, 0)
+        var samples = safetyBaselineSamples(now: now, kinds: [.respiratoryRate])
+        samples.append(metric(
+            .respiratoryRate,
+            value: 17,
+            at: date(2026, 9, 22, 7, 0),
+            source: "Apple Watch",
+            bundle: "com.apple.health"
+        ))
+
+        let snapshot = engine.snapshot(from: samples, preferences: .default, now: now)
+        let plan = engine.plan(snapshot: snapshot, commitment: nil, preferences: .default, now: now)
+
+        XCTAssertEqual(snapshot.safetyGate.freshOutlierCount, 1)
+        XCTAssertEqual(snapshot.coreReadinessScore, 100)
+        XCTAssertEqual(snapshot.readinessScore, snapshot.coreReadinessScore)
+        XCTAssertEqual(snapshot.readinessBand, .high)
+        XCTAssertEqual(plan.workoutAdjustment.volumeMultiplier, 1, accuracy: 0.001)
+        XCTAssertFalse(plan.workoutAdjustment.allowProgression)
+        XCTAssertTrue(plan.workoutAdjustment.detail.contains("Core readiness"))
+    }
+
+    func testTwoFreshSafetyOutliersCapReadinessAndReducePreGateVolumeTenPercent() {
+        let engine = WellnessEngine(calendar: calendar)
+        let now = date(2026, 9, 22, 9, 0)
+        var samples = safetyBaselineSamples(
+            now: now,
+            kinds: [.respiratoryRate, .oxygenSaturation]
+        )
+        samples.append(contentsOf: [
+            metric(
+                .respiratoryRate,
+                value: 17,
+                at: date(2026, 9, 22, 7, 0),
+                source: "Apple Watch",
+                bundle: "com.apple.health"
+            ),
+            metric(
+                .oxygenSaturation,
+                value: 94,
+                at: date(2026, 9, 22, 7, 0),
+                source: "Apple Watch",
+                bundle: "com.apple.health"
+            )
+        ])
+
+        let snapshot = engine.snapshot(from: samples, preferences: .default, now: now)
+        let plan = engine.plan(snapshot: snapshot, commitment: nil, preferences: .default, now: now)
+
+        XCTAssertEqual(snapshot.safetyGate.freshOutlierCount, 2)
+        XCTAssertEqual(snapshot.coreReadinessScore, 100)
+        XCTAssertEqual(snapshot.coreReadinessBand, .high)
+        XCTAssertEqual(snapshot.readinessScore, 69)
+        XCTAssertEqual(snapshot.readinessBand, .moderate)
+        XCTAssertEqual(plan.readiness, .moderate)
+        XCTAssertEqual(plan.workoutAdjustment.volumeMultiplier, 0.9, accuracy: 0.001)
+        XCTAssertFalse(plan.workoutAdjustment.allowProgression)
+        XCTAssertTrue(plan.workoutAdjustment.detail.contains("reduced by 10%"))
+    }
+
+    func testSafetySignalWithFewerThanFourteenBaselineNightsIsNeutral() {
+        let engine = WellnessEngine(calendar: calendar)
+        let now = date(2026, 9, 22, 9, 0)
+        var samples = safetyBaselineSamples(
+            now: now,
+            kinds: [.bodyTemperature],
+            baselineNightCount: 13
+        )
+        samples.append(metric(
+            .bodyTemperature,
+            value: 39,
+            at: date(2026, 9, 22, 7, 0),
+            source: "Thermometer",
+            bundle: "com.example.thermometer"
+        ))
+
+        let snapshot = engine.snapshot(from: samples, preferences: .default, now: now)
+        let signal = snapshot.safetyGate.signals.first { $0.kind == .bodyTemperature }
+
+        XCTAssertEqual(signal?.state, .buildingBaseline)
+        XCTAssertEqual(signal?.baselineNightCount, 13)
+        XCTAssertEqual(snapshot.safetyGate.freshOutlierCount, 0)
+    }
+
+    func testStaleSafetyOutlierIsNeutral() {
+        let engine = WellnessEngine(calendar: calendar)
+        let now = date(2026, 9, 22, 9, 0)
+        var samples: [MetricSample] = []
+        for offset in 5...19 {
+            let wake = calendar.date(byAdding: .day, value: -offset, to: date(2026, 9, 22, 7, 0))!
+            samples.append(sleep(
+                start: wake.addingTimeInterval(-480 * 60),
+                minutes: 480,
+                source: "Eight Sleep",
+                bundle: "com.eightsleep.app"
+            ))
+            samples.append(metric(
+                .respiratoryRate,
+                value: offset == 5 ? 18 : 15,
+                at: wake,
+                source: "Apple Watch",
+                bundle: "com.apple.health"
+            ))
+        }
+
+        let snapshot = engine.snapshot(from: samples, preferences: .default, now: now)
+        let signal = snapshot.safetyGate.signals.first { $0.kind == .respiratoryRate }
+
+        XCTAssertEqual(signal?.state, .stale)
+        XCTAssertEqual(snapshot.safetyGate.freshOutlierCount, 0)
+    }
+
+    func testOvernightHeartRateUsesThreeBeatFloorWhenMADIsZero() {
+        let engine = WellnessEngine(calendar: calendar)
+        let now = date(2026, 9, 22, 9, 0)
+        var samples = safetyBaselineSamples(now: now, kinds: [.heartRate])
+        samples.append(metric(
+            .heartRate,
+            value: 54,
+            at: date(2026, 9, 22, 7, 0),
+            source: "Apple Watch",
+            bundle: "com.apple.health"
+        ))
+
+        let signal = engine.snapshot(from: samples, preferences: .default, now: now)
+            .safetyGate.signals.first { $0.kind == .heartRate }
+
+        XCTAssertEqual(signal?.outlierThreshold, 3)
+        XCTAssertEqual(signal?.state, .withinRange)
+    }
+
+    func testUserEnteredSamplesStayVisibleButDoNotDriveCoreOrSafetyGuidance() {
+        let engine = WellnessEngine(calendar: calendar)
+        let now = date(2026, 9, 22, 9, 0)
+        let manualSleep = MetricSample(
+            kind: .sleep,
+            startDate: date(2026, 9, 21, 23, 0),
+            endDate: date(2026, 9, 22, 7, 0),
+            sleepStage: .asleep,
+            sourceName: "Health",
+            sourceBundleIdentifier: "com.apple.health",
+            wasUserEntered: true
+        )
+        var samples = safetyBaselineSamples(now: now, kinds: [.bodyTemperature])
+            .filter { $0.kind != .sleep }
+        samples.append(contentsOf: [
+            manualSleep,
+            MetricSample(
+                kind: .bodyTemperature,
+                startDate: date(2026, 9, 22, 7, 0),
+                endDate: date(2026, 9, 22, 7, 0),
+                value: 40,
+                sourceName: "Thermometer",
+                sourceBundleIdentifier: "com.example.thermometer",
+                wasUserEntered: true
+            )
+        ])
+
+        let snapshot = engine.snapshot(from: samples, preferences: .default, now: now)
+        let temperature = snapshot.safetyGate.signals.first { $0.kind == .bodyTemperature }
+
+        XCTAssertTrue(snapshot.samples.contains(where: \.wasUserEntered))
+        XCTAssertFalse(snapshot.readinessAvailable)
+        XCTAssertNotEqual(temperature?.state, .outlier)
+        XCTAssertEqual(snapshot.safetyGate.freshOutlierCount, 0)
+    }
+
+    func testCoreBiometricsUseNightlyMedianRatherThanMean() {
+        let engine = WellnessEngine(calendar: calendar)
+        let now = date(2026, 9, 22, 9, 0)
+        var preferences = WellnessPreferences.default
+        updatePreference(.sleep, in: &preferences) { $0.usedInRecommendation = false }
+        updatePreference(.restingHeartRate, in: &preferences) { $0.usedInRecommendation = false }
+        var samples = [40.0, 60, 200].map { value in
+            metric(
+                .heartRateVariability,
+                value: value,
+                at: date(2026, 9, 22, 7, Int(value) % 10),
+                source: "Hume",
+                bundle: "com.fittrack.hume"
+            )
+        }
+        for offset in 1...14 {
+            samples.append(metric(
+                .heartRateVariability,
+                value: 50,
+                at: calendar.date(byAdding: .day, value: -offset, to: date(2026, 9, 22, 7, 0))!,
+                source: "Hume",
+                bundle: "com.fittrack.hume"
+            ))
+        }
+
+        let snapshot = engine.snapshot(from: samples, preferences: preferences, now: now)
+
+        XCTAssertEqual(snapshot.latestHRV, 60)
+        XCTAssertEqual(snapshot.baselineHRV, 50)
+    }
+
+    func testTrainingContextUsesObservedActivityAndWorkoutSamples() {
+        let engine = WellnessEngine(calendar: calendar)
+        let now = date(2026, 9, 22, 9, 0)
+        let yesterday = date(2026, 9, 21, 12, 0)
+        let samples = [
+            metric(.activeEnergy, value: 100, at: yesterday, source: "Apple Watch", bundle: "com.apple.health"),
+            metric(.activeEnergy, value: 200, at: yesterday.addingTimeInterval(3600), source: "Apple Watch", bundle: "com.apple.health"),
+            metric(.activeEnergy, value: 1_000, at: yesterday, source: "Phone", bundle: "com.example.phone"),
+            metric(.exerciseMinutes, value: 35, at: yesterday, source: "Apple Watch", bundle: "com.apple.health"),
+            metric(.steps, value: 6_200, at: yesterday, source: "Apple Watch", bundle: "com.apple.health"),
+            metric(.workout, value: 45, at: yesterday, source: "Apple Watch", bundle: "com.apple.health"),
+            metric(.workout, value: 30, at: date(2026, 9, 18, 12, 0), source: "Sleep Coach", bundle: "com.sleepcoach")
+        ]
+
+        let context = engine.snapshot(from: samples, preferences: .default, now: now).trainingContext
+
+        XCTAssertEqual(context.previousDayActiveEnergy, 300)
+        XCTAssertEqual(context.previousDayExerciseMinutes, 35)
+        XCTAssertEqual(context.previousDaySteps, 6_200)
+        XCTAssertEqual(context.workoutsLastSevenDays, 2)
+        XCTAssertEqual(context.workoutMinutesLastSevenDays, 75)
+    }
+
+    func testTrainingContextDeduplicatesWorkoutSyncRevisions() {
+        let engine = WellnessEngine(calendar: calendar)
+        let now = date(2026, 9, 22, 9, 0)
+        let workoutDate = date(2026, 9, 21, 12, 0)
+        let samples = [
+            MetricSample(
+                kind: .workout,
+                startDate: workoutDate,
+                endDate: workoutDate.addingTimeInterval(30 * 60),
+                value: 30,
+                sourceName: "Sleep Coach",
+                sourceBundleIdentifier: "com.sleepcoach",
+                workoutSyncIdentifier: "session-1",
+                workoutSyncVersion: 1
+            ),
+            MetricSample(
+                kind: .workout,
+                startDate: workoutDate,
+                endDate: workoutDate.addingTimeInterval(40 * 60),
+                value: 40,
+                sourceName: "Sleep Coach",
+                sourceBundleIdentifier: "com.sleepcoach",
+                workoutSyncIdentifier: "session-1",
+                workoutSyncVersion: 2
+            ),
+            MetricSample(
+                kind: .workout,
+                startDate: workoutDate,
+                endDate: workoutDate.addingTimeInterval(90 * 60),
+                value: 90,
+                sourceName: "Health",
+                sourceBundleIdentifier: "com.apple.health",
+                wasUserEntered: true
+            )
+        ]
+
+        let context = engine.snapshot(from: samples, preferences: .default, now: now).trainingContext
+
+        XCTAssertEqual(context.workoutsLastSevenDays, 1)
+        XCTAssertEqual(context.workoutMinutesLastSevenDays, 40)
+        XCTAssertEqual(context.latestWorkoutDate, workoutDate.addingTimeInterval(40 * 60))
+    }
+
     func testAppleWatchDiagnosticIsNotCollapsedIntoGenericAppleHealth() {
         let diagnostic = SourceDiagnostic(
             sourceName: "Apple Watch",
@@ -456,7 +760,8 @@ final class WellnessEngineTests: XCTestCase {
         value: Double,
         at date: Date,
         source: String,
-        bundle: String
+        bundle: String,
+        productType: String? = nil
     ) -> MetricSample {
         MetricSample(
             kind: kind,
@@ -464,8 +769,51 @@ final class WellnessEngineTests: XCTestCase {
             endDate: date,
             value: value,
             sourceName: source,
-            sourceBundleIdentifier: bundle
+            sourceBundleIdentifier: bundle,
+            sourceProductType: productType
         )
+    }
+
+    private func safetyBaselineSamples(
+        now: Date,
+        kinds: [MetricKind],
+        baselineNightCount: Int = 14
+    ) -> [MetricSample] {
+        var samples: [MetricSample] = []
+        let currentWake = calendar.date(
+            bySettingHour: 7,
+            minute: 0,
+            second: 0,
+            of: now
+        )!
+        for offset in 0...baselineNightCount {
+            let wake = calendar.date(byAdding: .day, value: -offset, to: currentWake)!
+            samples.append(sleep(
+                start: wake.addingTimeInterval(-480 * 60),
+                minutes: 480,
+                source: "Eight Sleep",
+                bundle: "com.eightsleep.app"
+            ))
+            guard offset > 0 else { continue }
+            for kind in kinds {
+                let value: Double = switch kind {
+                case .respiratoryRate: 15
+                case .oxygenSaturation: 97
+                case .sleepingWristTemperature: 36
+                case .bodyTemperature: 36.8
+                case .heartRate: 52
+                default: 0
+                }
+                samples.append(metric(
+                    kind,
+                    value: value,
+                    at: wake,
+                    source: kind == .bodyTemperature ? "Thermometer" : "Apple Watch",
+                    bundle: kind == .bodyTemperature ? "com.example.thermometer" : "com.apple.health"
+                ))
+            }
+        }
+        return samples
     }
 
     private func updatePreference(

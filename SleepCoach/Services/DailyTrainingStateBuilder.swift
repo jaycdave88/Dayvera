@@ -20,6 +20,7 @@ struct DailyTrainingStateBuilder: Sendable {
     ) -> DailyTrainingState {
         let training = trainingHistory(
             sessions: sessions,
+            healthSamples: snapshot.samples,
             curatedPool: curatedPool,
             loadUnit: loadUnit,
             now: now
@@ -81,6 +82,7 @@ struct DailyTrainingStateBuilder: Sendable {
 
     private func trainingHistory(
         sessions: [WorkoutSessionRecord],
+        healthSamples: [MetricSample],
         curatedPool: [CuratedExerciseDefinition],
         loadUnit: LoadUnit,
         now: Date
@@ -91,6 +93,12 @@ struct DailyTrainingStateBuilder: Sendable {
         let twentyEightDayStart = calendar.date(byAdding: .day, value: -34, to: startOfToday) ?? startOfToday
         let recent = sessions.filter { $0.startedAt >= sevenDayStart && $0.startedAt <= now }
         let baseline = sessions.filter { $0.startedAt >= twentyEightDayStart && $0.startedAt < sevenDayStart }
+        let importedWorkoutCount = importedHealthWorkoutCount(
+            in: healthSamples,
+            excluding: sessions,
+            from: sevenDayStart,
+            through: now
+        )
 
         let recentEffort = effort(in: recent)
         let baselineWeekly = effort(in: baseline) / 4
@@ -153,12 +161,12 @@ struct DailyTrainingStateBuilder: Sendable {
                 ),
                 lastCompletedReps: latest.set.reps,
                 lastRPE: latest.set.rpe,
-                progressionEligible: completedSessions >= 2 && latest.set.rpe <= 8.5
+                progressionEligible: completedSessions >= 2
             )
         }.sorted { $0.catalogID < $1.catalogID }
 
         return TrainingHistoryState(
-            sessionsLast7Days: recent.count,
+            sessionsLast7Days: recent.count + importedWorkoutCount,
             weeklyTrainingEffort: recentEffort,
             loadVersus28DayAverage: loadRatio,
             muscleRecency: recency,
@@ -166,6 +174,57 @@ struct DailyTrainingStateBuilder: Sendable {
             exerciseHistory: histories,
             mostRecentFocus: mostRecentFocus(in: sessions, poolByID: poolByID)
         )
+    }
+
+    /// HealthKit workouts can include workouts recorded by Apple Watch and copies
+    /// exported by Sleep Coach itself. Sync identifiers prevent the exported copy
+    /// from inflating the planner's seven-day session count. HealthKit does not
+    /// expose exercise-level strength sets, so imported workouts affect frequency
+    /// only—not muscle recency, volume, or progression.
+    private func importedHealthWorkoutCount(
+        in samples: [MetricSample],
+        excluding localSessions: [WorkoutSessionRecord],
+        from startDate: Date,
+        through endDate: Date
+    ) -> Int {
+        let localSessionIdentifiers = Set(
+            localSessions.map { $0.id.uuidString.lowercased() }
+        )
+        var workoutsByIdentity: [String: MetricSample] = [:]
+
+        for workout in samples where workout.kind == .workout
+            && !workout.wasUserEntered
+            && workout.startDate >= startDate
+            && workout.startDate <= endDate {
+            let syncIdentifier = workout.workoutSyncIdentifier?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
+            if let syncIdentifier,
+               !syncIdentifier.isEmpty,
+               localSessionIdentifiers.contains(syncIdentifier) {
+                continue
+            }
+
+            let identity = if let syncIdentifier, !syncIdentifier.isEmpty {
+                // HealthKit sync identifiers are scoped to the writing source.
+                // Two unrelated workout apps may legitimately reuse a value.
+                "sync:\(workout.sourceBundleIdentifier.lowercased())|\(syncIdentifier)"
+            } else {
+                "uuid:\(workout.id.uuidString.lowercased())"
+            }
+            guard let existing = workoutsByIdentity[identity] else {
+                workoutsByIdentity[identity] = workout
+                continue
+            }
+            let existingVersion = existing.workoutSyncVersion ?? 0
+            let candidateVersion = workout.workoutSyncVersion ?? 0
+            if candidateVersion > existingVersion
+                || (candidateVersion == existingVersion && workout.endDate > existing.endDate) {
+                workoutsByIdentity[identity] = workout
+            }
+        }
+
+        return workoutsByIdentity.count
     }
 
     private func evidence(
@@ -197,6 +256,17 @@ struct DailyTrainingStateBuilder: Sendable {
                 value: sleep.asleepMinutes,
                 unit: "minutes",
                 observedAt: sleep.endDate
+            ))
+        }
+        if training.sessionsLast7Days > 0 {
+            items.append(.init(
+                id: "recent-workouts",
+                provenance: .calculated,
+                metric: .trainingHistory,
+                title: "\(training.sessionsLast7Days) workouts in 7 days",
+                detail: "Combined logged and non-user-entered Apple Health workouts, with Sleep Coach exports deduplicated.",
+                value: Double(training.sessionsLast7Days),
+                unit: "workouts"
             ))
         }
         if let days = lowerBodyRecency(training) {
@@ -267,9 +337,7 @@ struct DailyTrainingStateBuilder: Sendable {
     }
 
     private func effort(in sessions: [WorkoutSessionRecord]) -> Double {
-        sessions.flatMap(\.sets).filter { !$0.isWarmup }.reduce(0) { total, set in
-            total + min(max(set.rpe, 1), 10) / 10
-        }
+        Double(sessions.flatMap(\.sets).filter { !$0.isWarmup }.count)
     }
 
     private func targetSets(for pattern: MovementPattern) -> Int {

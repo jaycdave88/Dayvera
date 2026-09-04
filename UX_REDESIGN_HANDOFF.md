@@ -14,7 +14,7 @@ This document is the product and engineering handoff for the simulator-validated
 | Progress | How are recovery and training changing? | Compare Recovery or Training over 7D/28D |
 
 - Today owns the daily recommendation, its explanation, immediate recovery signals, and the route to Settings.
-- Plan owns sleep need, gym duration, travel/buffer assumptions, Calendar connection, wake-alarm application, persistent applied status, and undo.
+- Plan owns sleep need, gym duration, travel/buffer assumptions, selected planning calendars, detailed/Busy write destinations, wake-alarm application, persistent applied status, and undo.
 - Train owns templates, active-workout state, and the exercise library. Reusing the library selector while building a template is a contextual workflow, not duplicate navigation.
 - Progress owns Recovery and Training trends under one native segmented control.
 - Settings is one level below Today and owns Apple Health, Data & Sources, workout preferences, and privacy. Calendar and alarm rows report status and direct the user to Plan, where those permissions have context.
@@ -44,8 +44,8 @@ At Accessibility Dynamic Type sizes, text remains fully scalable, controls remai
 1. Show the schedule outcome first and label it as schedule-based—not sleep-cycle detection.
 2. Put `Apply plan` immediately after the outcome; pin it above the tab bar at Accessibility sizes.
 3. Capture an immutable plan snapshot before confirmation so edits cannot change an in-flight request.
-4. Confirm the exact alarm and optional gym event before writing.
-5. Keep applied times visible and provide Undo.
+4. Confirm the exact alarm, one optional detailed workout event, and any privacy-safe Busy copies before writing.
+5. Keep applied times and destinations visible, reconcile each app-owned receipt, and provide independent Undo.
 6. Put timeline, commitment, timing assumptions, and the optional energy heuristic behind progressive disclosure.
 
 ### Workout
@@ -53,8 +53,9 @@ At Accessibility Dynamic Type sizes, text remains fully scalable, controls remai
 1. Resume an active draft, start one saved template, or start Today’s generated workout.
 2. While a draft is active, explain why other templates cannot start and prevent editing/deleting the active template underneath it.
 3. Build templates from the exercise catalog, with local editable sets, reps, load, RPE, rest, and order.
-4. Keep lb/kg attached to each stored load and convert before comparisons.
-5. Finish into Training History and per-exercise progress.
+4. In the active logger, keep previous performance, the visible lb/kg unit, repetitions, completion, rest controls, and exercise options scannable without a chatbot interaction.
+5. Keep lb/kg attached to each stored load and convert before comparisons.
+6. Finish into Training History and per-exercise progress.
 
 ## Data-display rules
 
@@ -68,13 +69,14 @@ At Accessibility Dynamic Type sizes, text remains fully scalable, controls remai
 
 ## Implemented acceptance checks
 
-- iOS 26 simulator compile, static analysis, and 124-test unit suite.
-- Dark-mode iPhone 17 Pro review of all top-level screens, both trend destinations, Data & Sources, and first run.
-- Compact-width light-mode review of Today and Plan.
+- iOS 26 simulator compile and a simulator-verified 195-test suite with zero failures or skips; unsigned Release device-SDK and signed physical-device builds also pass.
+- Dark-mode iPhone 17 Pro review of all top-level screens, both trend destinations, Data & Sources, Calendar Setup, active workout, and first run.
+- Compact-width light-mode review of Today, Plan, Calendar Setup, and active workout.
 - Accessibility Extra Large review with reachable primary actions.
 - Deterministic demo routes for repeatable visual review without personal Health data.
+- The signed release candidate is installed and remained running on the development iPhone without a new crash diagnostic.
 
-Physical-device acceptance remains required for HealthKit permission states and source attribution, Eight Sleep/Hume sync timing, workout writes, Calendar behavior across timezone/DST changes, and a real AlarmKit wake alert.
+Hands-on physical-device acceptance remains required for real Eight Sleep/Hume/Apple Watch sample attribution, permission revocation/restoration, vendor sync timing, a finished workout write, Calendar behavior across timezone/DST changes, and a real AlarmKit wake alert.
 
 ## Follow-up backlog
 

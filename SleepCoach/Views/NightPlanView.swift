@@ -42,7 +42,7 @@ struct NightPlanView: View {
             }
         }
         .confirmationDialog("Apply tomorrow's plan?", isPresented: confirmationPresentation, titleVisibility: .visible) {
-            Button(pendingApplication?.includesCalendarEvent == true ? "Create alarm and gym event" : "Create wake alarm") {
+            Button(confirmationActionTitle) {
                 guard let request = pendingApplication else { return }
                 pendingApplication = nil
                 Task { await appModel.applyPlan(request) }
@@ -62,10 +62,33 @@ struct NightPlanView: View {
 
     private var confirmationMessage: String {
         guard let request = pendingApplication else { return "Review the proposed schedule before applying it." }
-        let gymChange = request.includesCalendarEvent
-            ? " and add a gym event from \(request.gymStart.shortTime)–\(request.gymEnd.shortTime)"
-            : ""
-        return "Create a wake alarm for \(request.wakeTime.shortTime)\(gymChange)."
+        let baseMessage: String
+        if request.includesCalendarEvent,
+           let destinations = request.calendarDestinations,
+           let summary = appModel.calendarApplicationSummary(for: destinations) {
+            baseMessage = "Create a wake alarm for \(request.wakeTime.shortTime), \(summary) from \(request.gymStart.shortTime)–\(request.gymEnd.shortTime)."
+        } else {
+            baseMessage = "Create a wake alarm for \(request.wakeTime.shortTime)."
+        }
+        guard appModel.calendarStatus == "Connected",
+              let warning = appModel.calendarDestinationConfigurationWarning else {
+            return baseMessage
+        }
+        return "\(baseMessage) \(warning)"
+    }
+
+    private var confirmationActionTitle: String {
+        guard let request = pendingApplication, request.includesCalendarEvent else {
+            return "Create wake alarm"
+        }
+        guard let destinations = request.calendarDestinations else {
+            return "Create alarm and workout event"
+        }
+        let count = destinations.requestedCount
+        if count > 1 { return "Create alarm and \(count) calendar events" }
+        return destinations.detailedCalendarIdentifier == nil
+            ? "Create alarm and Busy event"
+            : "Create alarm and workout event"
     }
 
     private var planSentenceCard: some View {
@@ -118,13 +141,58 @@ struct NightPlanView: View {
                 .frame(minHeight: 44)
             }
 
-            Text(appModel.calendarStatus == "Connected"
-                 ? "Nothing changes until you confirm. Applying updates one app-owned alarm and one Calendar event."
-                 : "Nothing changes until you confirm. Calendar is optional; connect it only if you want the gym event added.")
+            if appModel.calendarStatus == "Connected",
+               appModel.selectedDetailedCalendarIsUnavailable {
+                NavigationLink {
+                    CalendarSetupView()
+                } label: {
+                    Label(
+                        appModel.calendarPreferences.detailedCalendarIdentifier == nil
+                            ? "Set up Calendar destinations"
+                            : "Repair Calendar destination",
+                        systemImage: "calendar.badge.exclamationmark"
+                    )
+                }
+                .buttonStyle(.bordered)
+                .frame(minHeight: 44)
+            }
+
+            Text(planActionExplanation)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }
+    }
+
+    private var planActionExplanation: String {
+        if let reason = appModel.calendarReapplyBlockingReason {
+            return reason
+        }
+        guard appModel.calendarStatus == "Connected" else {
+            return "Nothing changes until you confirm. Calendar is optional; connect it only if you want workout time added."
+        }
+        let destinations = appModel.writableCalendarEventDestinations
+        let count = destinations.requestedCount
+        guard count > 0 else {
+            let base = "Calendar is connected, but no writable destination is configured. Applying creates only the wake alarm until you repair Calendar Setup."
+            return [base, appModel.calendarDestinationConfigurationWarning]
+                .compactMap { $0 }
+                .joined(separator: " ")
+        }
+        let busyCount = destinations.busyCalendarIdentifiers.count
+        if destinations.detailedCalendarIdentifier == nil {
+            let base = "Nothing changes until you confirm. Applying updates one app-owned alarm and \(busyCount) privacy-safe Busy \(busyCount == 1 ? "event" : "events"); no Workout details event is configured."
+            return [base, appModel.calendarDestinationConfigurationWarning]
+                .compactMap { $0 }
+                .joined(separator: " ")
+        }
+        if busyCount == 0 {
+            return "Nothing changes until you confirm. Applying updates one app-owned alarm and one detailed Workout event."
+        }
+        let base = "Nothing changes until you confirm. Applying updates one app-owned alarm, one detailed Workout event, and \(busyCount) privacy-safe Busy \(busyCount == 1 ? "copy" : "copies")."
+        return [base, appModel.calendarDestinationConfigurationWarning]
+            .compactMap { $0 }
+            .joined(separator: " ")
     }
 
     @ViewBuilder
@@ -156,7 +224,7 @@ struct NightPlanView: View {
                     Label(
                         dynamicTypeSize.isAccessibilitySize
                             ? "Apply plan"
-                            : (appModel.calendarStatus == "Connected" ? "Apply alarm and gym event" : "Apply wake alarm"),
+                            : applyButtonTitle,
                         systemImage: "checkmark.circle.fill"
                     )
                     .frame(maxWidth: .infinity, minHeight: 44)
@@ -168,12 +236,27 @@ struct NightPlanView: View {
             .disabled(
                 appModel.isApplying
                     || appModel.plan.wakeTime <= .now
+                    || appModel.calendarReapplyBlockingReason != nil
                     || (appModel.appliedPlanStatus != nil && appModel.appliedPlanVerificationMessage != nil)
             )
             .accessibilityLabel(
-                appModel.calendarStatus == "Connected" ? "Apply alarm and gym event" : "Apply wake alarm"
+                applyButtonTitle
             )
         }
+    }
+
+    private var applyButtonTitle: String {
+        if appModel.calendarReapplyBlockingReason != nil {
+            return "Undo applied plan first"
+        }
+        let request = appModel.planApplicationRequest()
+        let destinations = request.calendarDestinations
+        let count = destinations?.requestedCount ?? 0
+        if appModel.calendarStatus != "Connected" || count == 0 { return "Apply wake alarm" }
+        if count > 1 { return "Apply alarm and \(count) calendar events" }
+        return destinations?.detailedCalendarIdentifier == nil
+            ? "Apply alarm and Busy event"
+            : "Apply alarm and workout event"
     }
 
     private var isCurrentPlanApplied: Bool {
@@ -186,8 +269,9 @@ struct NightPlanView: View {
             return false
         }
         let expectsCalendarEvent = status.expectsCalendarEvent
-            || appModel.calendarStatus == "Connected"
-        return !expectsCalendarEvent || status.calendarEventApplied
+        let desiredDestinations = appModel.writableCalendarEventDestinations
+        return (!expectsCalendarEvent || status.calendarEventsComplete)
+            && status.matches(calendarDestinations: desiredDestinations)
     }
 
     private var accessibilityScheduleSummary: some View {
@@ -210,9 +294,8 @@ struct NightPlanView: View {
     private func appliedPlanCard(_ status: AppliedPlanStatus) -> some View {
         let needsReview = appModel.appliedPlanVerificationMessage != nil
         let expectsCalendarEvent = status.expectsCalendarEvent
-            || appModel.calendarStatus == "Connected"
         let isComplete = status.wakeAlarmApplied
-            && (!expectsCalendarEvent || status.calendarEventApplied)
+            && (!expectsCalendarEvent || status.calendarEventsComplete)
         let headline = needsReview
             ? "Plan needs review"
             : (isComplete ? "Scheduled items" : "Partially applied")
@@ -245,13 +328,40 @@ struct NightPlanView: View {
                         reviewDestination: "Clock"
                     )
                     if expectsCalendarEvent || status.calendarEventApplied {
-                        appliedItemRow(
-                            title: "Gym event",
-                            scheduledDetail: "\(status.gymStart.shortTime)–\(status.gymEnd.shortTime)",
-                            isApplied: status.calendarEventApplied,
-                            needsReview: reviewNeeded(for: .gymEvent),
-                            reviewDestination: "Calendar"
-                        )
+                        if status.calendarEventReceipts.isEmpty {
+                            appliedItemRow(
+                                title: "Workout event",
+                                scheduledDetail: "\(status.gymStart.shortTime)–\(status.gymEnd.shortTime)",
+                                isApplied: status.calendarEventApplied,
+                                needsReview: reviewNeeded(for: .gymEvent),
+                                reviewDestination: "Calendar"
+                            )
+                        } else {
+                            ForEach(status.calendarEventReceipts) { receipt in
+                                let receiptStart = receipt.startDate ?? status.gymStart
+                                let receiptEnd = receipt.endDate ?? status.gymEnd
+                                appliedItemRow(
+                                    title: receipt.role.displayTitle,
+                                    scheduledDetail: "\(receipt.calendarTitle) · \(receiptStart.shortTime)–\(receiptEnd.shortTime)",
+                                    isApplied: true,
+                                    needsReview: reviewNeeded(for: .gymEvent),
+                                    reviewDestination: receipt.calendarTitle
+                                )
+                            }
+                            let missingCount = max(
+                                0,
+                                status.requestedCalendarEventCount - status.appliedCalendarEventCount
+                            )
+                            if missingCount > 0 {
+                                appliedItemRow(
+                                    title: missingCount == 1 ? "Calendar destination" : "\(missingCount) Calendar destinations",
+                                    scheduledDetail: "",
+                                    isApplied: false,
+                                    needsReview: false,
+                                    reviewDestination: "Calendar"
+                                )
+                            }
+                        }
                     }
                 }
                 .font(.subheadline)
@@ -301,7 +411,11 @@ struct NightPlanView: View {
             return false
         }
         let mentionsWakeAlarm = message.contains("wake alarm") || message.contains("alarm:")
-        let mentionsGymEvent = message.contains("gym event") || message.contains("calendar:")
+        let mentionsGymEvent = message.contains("gym event")
+            || message.contains("busy event")
+            || message.contains("workout details")
+            || message.contains("calendar event")
+            || message.contains("calendar:")
         guard mentionsWakeAlarm || mentionsGymEvent else { return true }
         switch item {
         case .wakeAlarm: return mentionsWakeAlarm

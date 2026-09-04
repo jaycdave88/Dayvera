@@ -70,7 +70,9 @@ struct WellnessEngine: WellnessEvaluating {
         let baselineRHR = median(baselineRHRValues)
         let latestHRV = recentValue(from: hrvValues.values, now: now)
         let latestRHR = recentValue(from: rhrValues.values, now: now)
-        let previousEnergy = totalForPreviousDay(kind: .activeEnergy, samples: samples, now: now, preferredVendor: "hume")
+        let trainingContext = trainingContext(from: samples, now: now)
+        let previousEnergy = trainingContext.previousDayActiveEnergy
+        let safetyGate = safetyGate(from: samples, sleepSessions: sessions, now: now)
 
         let sleepDailyValues = sessions
             .filter { $0.endDate <= now }
@@ -165,8 +167,14 @@ struct WellnessEngine: WellnessEvaluating {
             else if sufficiency < 0.9 { score = min(score, 69) }
         }
 
-        let roundedScore = Int(clamp(score).rounded())
-        let band: ReadinessBand = roundedScore >= 70 ? .high : (roundedScore >= 45 ? .moderate : .low)
+        let coreRoundedScore = Int(clamp(score).rounded())
+        let coreBand: ReadinessBand = coreRoundedScore >= 70 ? .high : (coreRoundedScore >= 45 ? .moderate : .low)
+        let roundedScore = safetyGate.capsReadinessAtModerate && coreBand == .high
+            ? min(coreRoundedScore, 69)
+            : coreRoundedScore
+        let band: ReadinessBand = safetyGate.capsReadinessAtModerate && coreBand == .high
+            ? .moderate
+            : coreBand
         let biometricHistoryCounts = [
             hrvPreference.usedInRecommendation ? baselineHRVValues.count : nil,
             restingHeartRatePreference.usedInRecommendation ? baselineRHRValues.count : nil
@@ -196,13 +204,25 @@ struct WellnessEngine: WellnessEvaluating {
             ))
         }
 
+        if safetyGate.blocksProgression {
+            let names = safetyGate.freshOutliers.map { $0.kind.title }.joined(separator: ", ")
+            reasons.append(.init(
+                title: safetyGate.capsReadinessAtModerate
+                    ? "Multiple overnight signals outside range"
+                    : "Overnight signal outside range",
+                detail: "\(names) differed from your 21-day same-source range. This safety check can only make today’s training more conservative.",
+                isPositive: false
+            ))
+        }
+
         let recoveryTakeaway = recoveryTakeaway(
             readinessAvailable: readinessAvailable,
             confidence: confidence,
             sleep: sleepTrend,
             hrv: hrvTrend,
             restingHeartRate: restingHeartRateTrend,
-            usedMetrics: Set(preferences.decisionMetricPreferences.filter(\.usedInRecommendation).map(\.metric))
+            usedMetrics: Set(preferences.decisionMetricPreferences.filter(\.usedInRecommendation).map(\.metric)),
+            safetyGate: safetyGate
         )
 
         return DailyHealthSnapshot(
@@ -226,7 +246,11 @@ struct WellnessEngine: WellnessEvaluating {
             restingHeartRateTrend: restingHeartRateTrend,
             todaySignalOrder: preferences.orderedTodayMetrics,
             sleepTimingVariability: timingVariability,
-            recoveryTakeaway: recoveryTakeaway
+            recoveryTakeaway: recoveryTakeaway,
+            coreReadinessScore: coreRoundedScore,
+            coreReadinessBand: coreBand,
+            safetyGate: safetyGate,
+            trainingContext: trainingContext
         )
     }
 
@@ -346,8 +370,8 @@ struct WellnessEngine: WellnessEvaluating {
         let days = Dictionary(grouping: selected) { calendar.startOfDay(for: $0.endDate) }
         let values = days.compactMap { day, values -> DailyValue? in
             let numbers = values.compactMap(\.value)
-            guard !numbers.isEmpty else { return nil }
-            return DailyValue(date: day, value: numbers.reduce(0, +) / Double(numbers.count))
+            guard let nightlyMedian = median(numbers) else { return nil }
+            return DailyValue(date: day, value: nightlyMedian)
         }.sorted { $0.date > $1.date }
         let latestSample = selected.max { $0.endDate < $1.endDate }
         return SelectedDailySeries(
@@ -365,8 +389,12 @@ struct WellnessEngine: WellnessEvaluating {
         preferredVendor: String,
         now: Date
     ) -> SelectedSourceSamples {
-        let matching = samples.filter { $0.kind == kind && $0.endDate <= now }
-        let groups = Dictionary(grouping: matching, by: \.sourceBundleIdentifier)
+        let matching = samples.filter {
+            $0.kind == kind && $0.endDate <= now && !$0.wasUserEntered
+        }
+        // Product type is part of source identity so a Watch series is not
+        // silently combined with phone/app values written under the same bundle.
+        let groups = Dictionary(grouping: matching, by: \.sourceIdentity)
         let requestedBundle = preference.requestedBundleIdentifier
 
         guard !groups.isEmpty else {
@@ -384,24 +412,81 @@ struct WellnessEngine: WellnessEvaluating {
             )
         }
 
-        func latestDate(for bundleIdentifier: String) -> Date {
-            groups[bundleIdentifier]?.map(\.endDate).max() ?? .distantPast
+        func latestSample(for sourceIdentity: String) -> MetricSample? {
+            groups[sourceIdentity]?.max(by: { $0.endDate < $1.endDate })
         }
 
-        func sourceName(for bundleIdentifier: String) -> String {
-            groups[bundleIdentifier]?.max(by: { $0.endDate < $1.endDate })?.sourceName
-                ?? bundleIdentifier
+        func latestDate(for sourceIdentity: String) -> Date {
+            latestSample(for: sourceIdentity)?.endDate ?? .distantPast
+        }
+
+        func sourceName(for sourceIdentity: String) -> String {
+            latestSample(for: sourceIdentity)?.sourceName ?? sourceIdentity
+        }
+
+        func bundleIdentifier(for sourceIdentity: String) -> String {
+            latestSample(for: sourceIdentity)?.sourceBundleIdentifier ?? sourceIdentity
+        }
+
+        func freshnessBucket(for sourceIdentity: String) -> Int {
+            let age = now.timeIntervalSince(latestDate(for: sourceIdentity))
+            if age <= 36 * 3600 { return 2 }
+            if age <= 72 * 3600 { return 1 }
+            return 0
+        }
+
+        func observedDayCoverage(for sourceIdentity: String) -> Int {
+            let today = calendar.startOfDay(for: now)
+            let coverageStart = calendar.date(byAdding: .day, value: -20, to: today)!
+            return Set((groups[sourceIdentity] ?? []).compactMap { sample -> Date? in
+                let day = calendar.startOfDay(for: sample.endDate)
+                return day >= coverageStart ? day : nil
+            }).count
+        }
+
+        func isPreferredVendor(_ sourceIdentity: String) -> Bool {
+            let latest = latestSample(for: sourceIdentity)
+            let searchable = [
+                latest?.sourceName,
+                latest?.sourceBundleIdentifier,
+                latest?.sourceProductType,
+                latest?.device?.model
+            ].compactMap { $0 }.joined(separator: " ").lowercased()
+            return searchable.contains(preferredVendor)
+        }
+
+        /// Automatic choice is deterministic and evidence-led: freshness tier,
+        /// observed-day coverage, exact recency, then vendor only as a tie-break.
+        func ranksBefore(_ lhs: String, _ rhs: String) -> Bool {
+            let lhsFreshness = freshnessBucket(for: lhs)
+            let rhsFreshness = freshnessBucket(for: rhs)
+            if lhsFreshness != rhsFreshness { return lhsFreshness > rhsFreshness }
+
+            let lhsCoverage = observedDayCoverage(for: lhs)
+            let rhsCoverage = observedDayCoverage(for: rhs)
+            if lhsCoverage != rhsCoverage { return lhsCoverage > rhsCoverage }
+
+            let lhsLatest = latestDate(for: lhs)
+            let rhsLatest = latestDate(for: rhs)
+            if lhsLatest != rhsLatest { return lhsLatest > rhsLatest }
+
+            let lhsPreferred = isPreferredVendor(lhs)
+            let rhsPreferred = isPreferredVendor(rhs)
+            if lhsPreferred != rhsPreferred { return lhsPreferred }
+
+            return lhs < rhs
         }
 
         func result(
-            bundleIdentifier: String,
+            sourceIdentity: String,
             state: MetricSourceHealth.State,
             requestedBundleIdentifier: String?,
             reason: String
         ) -> SelectedSourceSamples {
-            SelectedSourceSamples(
-                samples: groups[bundleIdentifier] ?? [],
-                sourceName: sourceName(for: bundleIdentifier),
+            let bundleIdentifier = bundleIdentifier(for: sourceIdentity)
+            return SelectedSourceSamples(
+                samples: groups[sourceIdentity] ?? [],
+                sourceName: sourceName(for: sourceIdentity),
                 sourceBundleIdentifier: bundleIdentifier,
                 sourceHealth: MetricSourceHealth(
                     state: state,
@@ -412,31 +497,20 @@ struct WellnessEngine: WellnessEvaluating {
             )
         }
 
-        let newestDate = groups.keys.map(latestDate).max() ?? .distantPast
-        let freshestBundle = groups.keys.max {
-            latestDate(for: $0) < latestDate(for: $1)
-        }
-        let preferredBundle = groups.keys.filter { bundleIdentifier in
-            let searchable = "\(bundleIdentifier) \(sourceName(for: bundleIdentifier))".lowercased()
-            return searchable.contains(preferredVendor)
-        }.max {
-            latestDate(for: $0) < latestDate(for: $1)
-        }
-        let preferredIsUsable = preferredBundle.map {
-            latestDate(for: $0) >= newestDate.addingTimeInterval(-36 * 3600)
-        } ?? false
-        let automaticBundle = preferredIsUsable ? preferredBundle : freshestBundle
+        let automaticSourceIdentity = groups.keys.sorted(by: ranksBefore).first
 
-        func automaticReason(for bundleIdentifier: String) -> String {
-            let name = sourceName(for: bundleIdentifier)
-            if preferredIsUsable, bundleIdentifier == preferredBundle {
-                return "Automatically using \(name), the preferred source for \(kind.title)."
-            }
-            return "Automatically using \(name), the freshest source with readable \(kind.title.lowercased()) data."
+        func automaticReason(for sourceIdentity: String) -> String {
+            let name = sourceName(for: sourceIdentity)
+            let coverage = observedDayCoverage(for: sourceIdentity)
+            let period = kind == .sleep ? "night" : "day"
+            let coverageText = coverage == 1
+                ? "1 observed \(period)"
+                : "\(coverage) observed \(period)s"
+            return "Automatically using \(name) based on usable freshness and \(coverageText)."
         }
 
         guard preference.sourceMode == .manual else {
-            guard let automaticBundle else {
+            guard let automaticSourceIdentity else {
                 return SelectedSourceSamples(
                     samples: [],
                     sourceName: nil,
@@ -445,23 +519,27 @@ struct WellnessEngine: WellnessEvaluating {
                 )
             }
             return result(
-                bundleIdentifier: automaticBundle,
+                sourceIdentity: automaticSourceIdentity,
                 state: .automatic,
                 requestedBundleIdentifier: nil,
-                reason: automaticReason(for: automaticBundle)
+                reason: automaticReason(for: automaticSourceIdentity)
             )
         }
 
-        if let requestedBundle, groups[requestedBundle] != nil {
-            let requestedIsUsable = latestDate(for: requestedBundle)
-                >= newestDate.addingTimeInterval(-36 * 3600)
+        let requestedSourceIdentity = requestedBundle.flatMap { requestedBundle in
+            groups.keys.filter { bundleIdentifier(for: $0) == requestedBundle }
+                .sorted(by: ranksBefore)
+                .first
+        }
+        if let requestedBundle, let requestedSourceIdentity {
+            let requestedIsUsable = freshnessBucket(for: requestedSourceIdentity) > 0
             if requestedIsUsable || !preference.allowAutomaticFallback {
-                let name = sourceName(for: requestedBundle)
+                let name = sourceName(for: requestedSourceIdentity)
                 let reason = requestedIsUsable
                     ? "Using your selected source, \(name), for \(kind.title)."
-                    : "Using your selected source, \(name), for \(kind.title). Newer data exists elsewhere, but automatic fallback is off."
+                    : "Using your selected source, \(name), for \(kind.title). Its data is stale, but automatic fallback is off."
                 return result(
-                    bundleIdentifier: requestedBundle,
+                    sourceIdentity: requestedSourceIdentity,
                     state: .manual,
                     requestedBundleIdentifier: requestedBundle,
                     reason: reason
@@ -469,7 +547,7 @@ struct WellnessEngine: WellnessEvaluating {
             }
         }
 
-        guard preference.allowAutomaticFallback, let automaticBundle else {
+        guard preference.allowAutomaticFallback, let automaticSourceIdentity else {
             let reason = requestedBundle.map {
                 "\($0) has no usable \(kind.title.lowercased()) data, and automatic fallback is off."
             } ?? "No manual source is selected for \(kind.title), and automatic fallback is off."
@@ -484,17 +562,15 @@ struct WellnessEngine: WellnessEvaluating {
             )
         }
 
-        let selectedName = sourceName(for: automaticBundle)
+        let selectedName = sourceName(for: automaticSourceIdentity)
         let requestedDescription = requestedBundle.map { bundleIdentifier in
-            groups[bundleIdentifier] == nil
-                ? bundleIdentifier
-                : sourceName(for: bundleIdentifier)
+            requestedSourceIdentity.map { sourceName(for: $0) } ?? bundleIdentifier
         }
         let fallbackCause = requestedDescription.map {
             "\($0) has no usable \(kind.title.lowercased()) data."
         } ?? "No manual source is selected."
         return result(
-            bundleIdentifier: automaticBundle,
+            sourceIdentity: automaticSourceIdentity,
             state: .fallback,
             requestedBundleIdentifier: requestedBundle,
             reason: "\(fallbackCause) Using \(selectedName) because automatic fallback is on."
@@ -518,6 +594,135 @@ struct WellnessEngine: WellnessEvaluating {
             to: calendar.startOfDay(for: now)
         ).day ?? Int.max
         return age <= 2 ? latest.value : nil
+    }
+
+    private func safetyGate(
+        from samples: [MetricSample],
+        sleepSessions: [SleepSession],
+        now: Date
+    ) -> SafetyGateEvaluation {
+        SafetyGateEvaluation(signals: MetricKind.safetyMetrics.map { kind in
+            safetySignal(
+                kind: kind,
+                samples: samples,
+                sleepSessions: sleepSessions,
+                now: now
+            )
+        })
+    }
+
+    private func safetySignal(
+        kind: MetricKind,
+        samples: [MetricSample],
+        sleepSessions: [SleepSession],
+        now: Date
+    ) -> SafetySignalEvaluation {
+        let selection = selectedSourceSamples(
+            kind: kind,
+            samples: samples.filter { $0.value != nil },
+            preference: .defaultValue(for: kind),
+            preferredVendor: "watch",
+            now: now
+        )
+        let requiresSleepWindow = kind == .heartRate
+            || kind == .respiratoryRate
+            || kind == .oxygenSaturation
+        let eligibleSamples = selection.samples.filter { sample in
+            !requiresSleepWindow || associatedSleepSession(for: sample, in: sleepSessions) != nil
+        }
+        let samplesByNight = Dictionary(grouping: eligibleSamples) { sample in
+            if let session = associatedSleepSession(for: sample, in: sleepSessions) {
+                return calendar.startOfDay(for: session.endDate)
+            }
+            return calendar.startOfDay(for: sample.endDate)
+        }
+        let values = samplesByNight.compactMap { date, samples -> DailyValue? in
+            guard let value = median(samples.compactMap(\.value)) else { return nil }
+            return DailyValue(date: date, value: value)
+        }.sorted { $0.date > $1.date }
+
+        let current = values.first
+        let freshness = freshness(for: current?.date, now: now)
+        let baselineValues = baselineValues(for: values, currentDate: current?.date)
+        let baseline = median(baselineValues)
+        let deviation = current.flatMap { current in baseline.map { current.value - $0 } }
+        let threshold = baseline.flatMap { baseline in
+            outlierThreshold(kind: kind, baseline: baseline, values: baselineValues)
+        }
+
+        let state: SafetySignalState
+        if current == nil {
+            state = .noCurrentValue
+        } else if freshness.value == .stale {
+            state = .stale
+        } else if baselineValues.count < SafetyGateEvaluation.minimumBaselineNights
+                    || baseline == nil
+                    || threshold == nil {
+            state = .buildingBaseline
+        } else if let currentValue = current?.value,
+                  let baseline,
+                  let threshold,
+                  isOutlier(kind: kind, current: currentValue, baseline: baseline, threshold: threshold) {
+            state = .outlier
+        } else {
+            state = .withinRange
+        }
+
+        return SafetySignalEvaluation(
+            kind: kind,
+            state: state,
+            currentValue: current?.value,
+            currentDate: current?.date,
+            baselineMedian: baseline,
+            baselineNightCount: baselineValues.count,
+            deviation: deviation,
+            outlierThreshold: threshold,
+            sourceName: selection.sourceName,
+            sourceBundleIdentifier: selection.sourceBundleIdentifier
+        )
+    }
+
+    private func associatedSleepSession(
+        for sample: MetricSample,
+        in sessions: [SleepSession]
+    ) -> SleepSession? {
+        // Some writers timestamp a nightly summary at wake rather than inside
+        // the sleep interval, so allow a narrow post-wake association window.
+        sessions.first { session in
+            sample.endDate >= session.startDate.addingTimeInterval(-30 * 60)
+                && sample.startDate <= session.endDate.addingTimeInterval(2 * 3600)
+        }
+    }
+
+    private func outlierThreshold(
+        kind: MetricKind,
+        baseline: Double,
+        values: [Double]
+    ) -> Double? {
+        guard let medianAbsoluteDeviation = median(values.map { abs($0 - baseline) }) else {
+            return nil
+        }
+        let robustThreshold = 2.5 * 1.4826 * medianAbsoluteDeviation
+        let floor: Double = switch kind {
+        case .respiratoryRate: 0.75
+        case .oxygenSaturation: 1
+        case .sleepingWristTemperature, .bodyTemperature: 0.2
+        case .heartRate: 3
+        default: 0
+        }
+        return max(robustThreshold, floor)
+    }
+
+    private func isOutlier(
+        kind: MetricKind,
+        current: Double,
+        baseline: Double,
+        threshold: Double
+    ) -> Bool {
+        let relevantDifference = kind == .oxygenSaturation
+            ? baseline - current
+            : abs(current - baseline)
+        return relevantDifference > 0 && relevantDifference >= threshold
     }
 
     private func makeSleepTrend(
@@ -740,7 +945,8 @@ struct WellnessEngine: WellnessEvaluating {
         sleep: MetricTrendSeries,
         hrv: MetricTrendSeries,
         restingHeartRate: MetricTrendSeries,
-        usedMetrics: Set<MetricKind>
+        usedMetrics: Set<MetricKind>,
+        safetyGate: SafetyGateEvaluation
     ) -> String {
         guard !usedMetrics.isEmpty else {
             return "No recovery signals are currently included in the recommendation."
@@ -751,6 +957,12 @@ struct WellnessEngine: WellnessEvaluating {
                 : "No current selected recovery signal is available, so guidance is not ready yet."
         }
         let prefix = confidence == .low ? "Early estimate: " : ""
+        if safetyGate.capsReadinessAtModerate {
+            return prefix + "multiple fresh overnight signals are outside their same-source ranges, so today’s recommendation is capped and reduced."
+        }
+        if safetyGate.blocksProgression {
+            return prefix + "one fresh overnight signal is outside its same-source range, so progression is paused while the core recommendation stays unchanged."
+        }
         if usedMetrics.contains(.sleep), sleep.status == .needsAttention {
             return prefix + "sleep duration is the clearest recovery constraint relative to your target."
         }
@@ -775,6 +987,63 @@ struct WellnessEngine: WellnessEvaluating {
         return prefix + "the selected signals (\(names)) are broadly near their current references."
     }
 
+    private func trainingContext(
+        from samples: [MetricSample],
+        now: Date
+    ) -> TrainingContextSnapshot {
+        let today = calendar.startOfDay(for: now)
+        let sevenDayStart = calendar.date(byAdding: .day, value: -6, to: today)!
+        let workoutCandidates = samples.filter {
+            $0.kind == .workout
+                && !$0.wasUserEntered
+                && $0.startDate >= sevenDayStart
+                && $0.startDate <= now
+        }
+        var workoutsByIdentity: [String: MetricSample] = [:]
+        for workout in workoutCandidates {
+            let identity = workout.workoutSyncIdentifier.map {
+                "sync:\(workout.sourceBundleIdentifier)|\($0)"
+            } ?? "uuid:\(workout.id.uuidString)"
+            guard let existing = workoutsByIdentity[identity] else {
+                workoutsByIdentity[identity] = workout
+                continue
+            }
+            let existingVersion = existing.workoutSyncVersion ?? 0
+            let candidateVersion = workout.workoutSyncVersion ?? 0
+            if candidateVersion > existingVersion
+                || (candidateVersion == existingVersion && workout.endDate > existing.endDate) {
+                workoutsByIdentity[identity] = workout
+            }
+        }
+        let workouts = Array(workoutsByIdentity.values)
+        let workoutMinutes = workouts.compactMap(\.value)
+        return TrainingContextSnapshot(
+            previousDayActiveEnergy: totalForPreviousDay(
+                kind: .activeEnergy,
+                samples: samples,
+                now: now,
+                preferredVendor: "watch"
+            ),
+            previousDayExerciseMinutes: totalForPreviousDay(
+                kind: .exerciseMinutes,
+                samples: samples,
+                now: now,
+                preferredVendor: "watch"
+            ),
+            previousDaySteps: totalForPreviousDay(
+                kind: .steps,
+                samples: samples,
+                now: now,
+                preferredVendor: "watch"
+            ),
+            workoutsLastSevenDays: workouts.count,
+            workoutMinutesLastSevenDays: workoutMinutes.isEmpty
+                ? nil
+                : workoutMinutes.reduce(0, +),
+            latestWorkoutDate: workouts.map(\.endDate).max()
+        )
+    }
+
     private func totalForPreviousDay(
         kind: MetricKind,
         samples: [MetricSample],
@@ -783,14 +1052,26 @@ struct WellnessEngine: WellnessEvaluating {
     ) -> Double? {
         let today = calendar.startOfDay(for: now)
         let yesterday = calendar.date(byAdding: .day, value: -1, to: today)!
-        let matching = samples.filter { $0.kind == kind && $0.startDate >= yesterday && $0.startDate < today }
-        let preferred = matching.filter {
-            "\($0.sourceName) \($0.sourceBundleIdentifier)".lowercased().contains(preferredVendor)
+        let matching = samples.filter {
+            $0.kind == kind
+                && !$0.wasUserEntered
+                && $0.startDate >= yesterday
+                && $0.startDate < today
         }
-        let sourceGroups = Dictionary(grouping: matching, by: \.sourceBundleIdentifier)
-        let selected = preferred.isEmpty
-            ? (sourceGroups.max { lhs, rhs in lhs.value.count < rhs.value.count }?.value ?? [])
-            : preferred
+        let sourceGroups = Dictionary(grouping: matching, by: \.sourceIdentity)
+        let preferredGroups = sourceGroups.filter { _, group in
+            group.contains {
+                "\($0.sourceName) \($0.sourceBundleIdentifier)".lowercased().contains(preferredVendor)
+            }
+        }
+        let selected = (preferredGroups.isEmpty ? sourceGroups : preferredGroups)
+            .max { lhs, rhs in
+                if lhs.value.count == rhs.value.count {
+                    return (lhs.value.map(\.endDate).max() ?? .distantPast)
+                        < (rhs.value.map(\.endDate).max() ?? .distantPast)
+                }
+                return lhs.value.count < rhs.value.count
+            }?.value ?? []
         let values = selected.compactMap(\.value)
         return values.isEmpty ? nil : values.reduce(0, +)
     }
@@ -837,23 +1118,49 @@ struct WellnessEngine: WellnessEvaluating {
                 allowProgression: false
             )
         }
-        if snapshot.confidence == .low && snapshot.readinessBand == .high {
-            return .init(
+
+        let coreAdjustment: WorkoutAdjustment
+        if snapshot.confidence == .low && snapshot.coreReadinessBand == .high {
+            coreAdjustment = .init(
                 title: "Conservative baseline",
                 detail: "Early signals look positive, but keep one or two reps in reserve while your baseline develops.",
                 volumeMultiplier: 0.85,
                 rpeCap: 8,
                 allowProgression: false
             )
+        } else {
+            coreAdjustment = switch snapshot.coreReadinessBand {
+            case .high:
+                .init(title: "Full performance session", detail: "Keep planned volume. Review your recent sets before choosing a load increase; Sleep Coach does not change weights automatically.", volumeMultiplier: 1, rpeCap: nil, allowProgression: true)
+            case .moderate:
+                .init(title: "Reduce volume 25%", detail: "Keep technique and normal working weight, remove accessory sets, and cap effort at RPE 8.", volumeMultiplier: 0.75, rpeCap: 8, allowProgression: false)
+            case .low:
+                .init(title: "Recovery or reschedule", detail: "Favor mobility or light zone-2 work. Avoid PR attempts and heavy compound volume.", volumeMultiplier: 0.35, rpeCap: 6, allowProgression: false)
+            }
         }
-        return switch snapshot.readinessBand {
-        case .high:
-            .init(title: "Full performance session", detail: "Keep planned volume. Review your recent sets before choosing a load increase; Sleep Coach does not change weights automatically.", volumeMultiplier: 1, rpeCap: nil, allowProgression: true)
-        case .moderate:
-            .init(title: "Reduce volume 25%", detail: "Keep technique and normal working weight, remove accessory sets, and cap effort at RPE 8.", volumeMultiplier: 0.75, rpeCap: 8, allowProgression: false)
-        case .low:
-            .init(title: "Recovery or reschedule", detail: "Favor mobility or light zone-2 work. Avoid PR attempts and heavy compound volume.", volumeMultiplier: 0.35, rpeCap: 6, allowProgression: false)
+
+        if snapshot.safetyGate.capsReadinessAtModerate {
+            let signalNames = snapshot.safetyGate.freshOutliers.map { $0.kind.title.lowercased() }.joined(separator: ", ")
+            return .init(
+                title: "Safety check · reduce volume 10%",
+                detail: "Multiple fresh signals (\(signalNames)) are outside their 21-day same-source ranges. The readiness band is capped at Moderate and the pre-check volume is reduced by 10%.",
+                volumeMultiplier: coreAdjustment.volumeMultiplier * 0.9,
+                rpeCap: coreAdjustment.rpeCap,
+                allowProgression: false
+            )
         }
+        if snapshot.safetyGate.blocksProgression {
+            let signalName = snapshot.safetyGate.freshOutliers.first?.kind.title.lowercased()
+                ?? "overnight signal"
+            return .init(
+                title: "Safety check · hold progression",
+                detail: "A fresh \(signalName) value is outside its 21-day same-source range. Core readiness and planned volume are unchanged, but progression is paused today.",
+                volumeMultiplier: coreAdjustment.volumeMultiplier,
+                rpeCap: coreAdjustment.rpeCap,
+                allowProgression: false
+            )
+        }
+        return coreAdjustment
     }
 
     private func asleepDuration(_ samples: [MetricSample]) -> TimeInterval {

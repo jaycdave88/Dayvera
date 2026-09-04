@@ -9,11 +9,32 @@ enum ProgressSection: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-struct ProgressView: View {
-    @State private var section: ProgressSection
+private struct BodyCompositionProgressObservation: Identifiable {
+    var id: MetricKind { kind }
+    let kind: MetricKind
+    let currentValue: Double
+    let delta: Double?
+    let currentDate: Date
+    let sourceName: String
+}
 
-    init(initialSection: ProgressSection = .recovery) {
-        _section = State(initialValue: initialSection)
+private extension MetricKind {
+    var progressSymbol: String {
+        switch self {
+        case .bodyMass: "scalemass.fill"
+        case .bodyFatPercentage: "percent"
+        case .leanBodyMass: "figure.strengthtraining.traditional"
+        case .bodyMassIndex: "chart.xyaxis.line"
+        default: "waveform.path.ecg"
+        }
+    }
+}
+
+struct ProgressView: View {
+    @Binding private var section: ProgressSection
+
+    init(section: Binding<ProgressSection>) {
+        _section = section
     }
 
     var body: some View {
@@ -90,6 +111,7 @@ private struct ProgressDetailView<SectionPicker: View>: View {
         takeawayCard
         sleepDurationCard
         biometricCharts
+        bodyMeasurementsCard
     }
 
     private var takeawayCard: some View {
@@ -227,6 +249,141 @@ private struct ProgressDetailView<SectionPicker: View>: View {
         }
     }
 
+    private var bodyMeasurementsCard: some View {
+        let observations = MetricKind.bodyCompositionMetrics.compactMap {
+            bodyCompositionObservation(for: $0)
+        }
+        return CoachCard {
+            VStack(alignment: .leading, spacing: 14) {
+                SectionTitle(
+                    title: "Body Measurements",
+                    subtitle: "Apple Health context · not used for readiness or workout selection"
+                )
+
+                if observations.isEmpty {
+                    EmptyState(
+                        symbol: "scalemass",
+                        title: "No body measurements yet",
+                        detail: "Standard weight and body-composition values shared with Apple Health will appear here."
+                    )
+                } else {
+                    ForEach(observations) { observation in
+                        bodyMeasurementRow(observation)
+                        if observation.id != observations.last?.id {
+                            Divider()
+                        }
+                    }
+                }
+
+                DisclosureGroup("How this context is used") {
+                    Text("Sleep Coach shows non-user-entered body measurements for progress context only. Changes are same-source differences within the selected date range; they never raise or lower readiness, trigger a safety check, or alter a workout.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 6)
+                }
+                .font(.subheadline.weight(.semibold))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func bodyMeasurementRow(
+        _ observation: BodyCompositionProgressObservation
+    ) -> some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 10) {
+                bodyMeasurementIdentity(observation)
+                bodyMeasurementValue(observation, alignment: .leading)
+                    .padding(.leading, 36)
+            }
+            .accessibilityElement(children: .combine)
+        } else {
+            HStack(alignment: .top, spacing: 12) {
+                bodyMeasurementIdentity(observation)
+                Spacer(minLength: 8)
+                bodyMeasurementValue(observation, alignment: .trailing)
+            }
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    private func bodyMeasurementIdentity(
+        _ observation: BodyCompositionProgressObservation
+    ) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: observation.kind.progressSymbol)
+                .foregroundStyle(Color.coachIndigo)
+                .frame(width: 24, height: 24)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(observation.kind.title)
+                    .font(.subheadline.weight(.semibold))
+                Text("\(observation.sourceName) · \(observation.currentDate.formatted(date: .abbreviated, time: .omitted))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func bodyMeasurementValue(
+        _ observation: BodyCompositionProgressObservation,
+        alignment: HorizontalAlignment
+    ) -> some View {
+        let loadUnit = appModel.trainingProfile.loadUnit
+        return VStack(alignment: alignment, spacing: 3) {
+            Text(bodyCompositionDisplayValue(
+                value: observation.currentValue,
+                kind: observation.kind,
+                loadUnit: loadUnit
+            ))
+                .font(.headline.monospacedDigit())
+            if let delta = observation.delta {
+                Text("\(bodyCompositionDeltaDisplayValue(value: delta, kind: observation.kind, loadUnit: loadUnit)) in \(window.title)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("One reading in \(window.title)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func bodyCompositionObservation(
+        for kind: MetricKind
+    ) -> BodyCompositionProgressObservation? {
+        let today = Calendar.current.startOfDay(for: appModel.snapshot.generatedAt)
+        let start = Calendar.current.date(
+            byAdding: .day,
+            value: -(window.rawValue - 1),
+            to: today
+        ) ?? today
+        let matching = appModel.snapshot.samples.filter {
+            $0.kind == kind
+                && !$0.wasUserEntered
+                && $0.value != nil
+                && $0.endDate >= start
+                && $0.endDate <= appModel.snapshot.generatedAt
+        }
+        let groups = Dictionary(grouping: matching, by: \.sourceIdentity)
+        guard let selected = groups.values.max(by: { lhs, rhs in
+            let lhsLatest = lhs.map(\.endDate).max() ?? .distantPast
+            let rhsLatest = rhs.map(\.endDate).max() ?? .distantPast
+            if lhsLatest == rhsLatest { return lhs.count < rhs.count }
+            return lhsLatest < rhsLatest
+        }) else { return nil }
+        let ordered = selected.sorted { $0.endDate < $1.endDate }
+        guard let current = ordered.last, let currentValue = current.value else { return nil }
+        let earlier = ordered.dropLast().first?.value
+        return BodyCompositionProgressObservation(
+            kind: kind,
+            currentValue: currentValue,
+            delta: earlier.map { currentValue - $0 },
+            currentDate: current.endDate,
+            sourceName: current.sourceName
+        )
+    }
+
     @ViewBuilder
     private var trainingContent: some View {
         if sessions.isEmpty {
@@ -296,7 +453,11 @@ private struct ProgressDetailView<SectionPicker: View>: View {
                         .foregroundStyle(Color.coachIndigo)
                         .symbolSize(point.isPersonalBest ? 80 : 34)
                         .accessibilityLabel(point.date.formatted(date: .abbreviated, time: .omitted))
-                        .accessibilityValue("Estimated one rep max \(formattedWeight(point.estimatedOneRepMax)); top set \(formattedWeight(point.weight)) for \(point.reps) reps at RPE \(formattedRPE(point.rpe))\(point.isPersonalBest ? ", estimated best" : "")")
+                        .accessibilityValue(
+                            "Estimated one rep max \(formattedWeight(point.estimatedOneRepMax)); top set \(formattedWeight(point.weight)) for \(point.reps) reps"
+                                + (point.rpe.map { " at RPE \(formattedRPE($0))" } ?? "")
+                                + (point.isPersonalBest ? ", estimated best" : "")
+                        )
                         if point.isPersonalBest {
                             PointMark(
                                 x: .value("Personal best session", point.date),
@@ -499,7 +660,10 @@ private struct ProgressDetailView<SectionPicker: View>: View {
                     Text(point.date.shortDay).font(.subheadline.bold())
                     if point.isPersonalBest { Text("Estimated Best").font(.caption.bold()) }
                 }
-                Text("\(formattedWeight(point.weight)) × \(point.reps) · RPE \(formattedRPE(point.rpe))")
+                Text(
+                    "\(formattedWeight(point.weight)) × \(point.reps)"
+                        + (point.rpe.map { " · RPE \(formattedRPE($0))" } ?? "")
+                )
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

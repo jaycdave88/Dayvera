@@ -502,9 +502,7 @@ struct WorkoutPlanningEngine: Sendable {
             secondsPerSet: exercise.secondsPerSet,
             transitionSeconds: exercise.transitionSeconds,
             progressionSuggestion: progressionSuggestion(
-                for: exercise,
                 history: history,
-                state: state,
                 envelope: envelope,
                 repRange: goalStyle.repRange,
                 unit: loadUnit
@@ -513,9 +511,7 @@ struct WorkoutPlanningEngine: Sendable {
     }
 
     private func progressionSuggestion(
-        for exercise: CuratedExerciseDefinition,
         history: ExerciseTrainingHistory?,
-        state: DailyTrainingState,
         envelope: RecoveryEnvelope,
         repRange: RepRange,
         unit: LoadUnit
@@ -526,17 +522,10 @@ struct WorkoutPlanningEngine: Sendable {
               let completedRepetitions = history.lastCompletedReps,
               completedRepetitions >= repRange.lowerBound else { return nil }
 
-        if let load = history.lastWorkingLoad, load > 0, let increment = exercise.loadIncrement, increment > 0 {
-            return ProgressionSuggestion(
-                kind: .load,
-                currentLoad: load,
-                suggestedLoad: load + increment,
-                currentRepetitions: completedRepetitions,
-                suggestedRepetitions: completedRepetitions,
-                unit: unit,
-                requiresConfirmation: true
-            )
-        }
+        // The normalized planning history does not retain enough set-level
+        // evidence to prove two complete top-of-range sessions at one load.
+        // Only the active logger can make that canonical load-progression
+        // decision; the planner may conservatively suggest one more rep.
         if completedRepetitions < repRange.upperBound {
             return ProgressionSuggestion(
                 kind: .repetitions,

@@ -50,10 +50,10 @@ explainable workout recommendation and morning schedule.
 
 `Eight Sleep / Hume / Apple Watch → Apple Health → Sleep Coach`
 
-- **Read:** sleep, HRV, and resting heart rate, with the contributing source kept visible.
+- **Read:** core recovery, safety, activity, workout, and body-context signals, with every observed source kept visible.
 - **Decide:** build three validated daily workout options from recovery, training history, goals, time, equipment, and exclusions.
-- **Plan:** suggest bedtime, wake time, and gym time from the next hard Calendar commitment.
-- **Train:** build templates from an illustrated exercise catalog, log sets, review progress, and retry Apple Health exports.
+- **Plan:** suggest bedtime, wake time, and gym time across selected calendars; save full details to one calendar and optional privacy-safe “Busy” copies to others.
+- **Train:** build templates from an illustrated exercise catalog, then log previous performance, load, reps, completed sets, and rest time.
 
 Sleep Coach reads what compatible apps write to Apple Health; it does not call
 private Eight Sleep or Hume APIs. Alarms and Calendar events change only after
@@ -70,10 +70,25 @@ long-range periodized program or apply suggested weight increases automatically.
 ## 🚀 Run it
 
 Requires **Xcode 26+** and an **iOS 26** simulator or iPhone.
+Sleep Coach is not distributed through the App Store yet, so install it from
+source with Xcode.
 
-1. Open `SleepCoach.xcodeproj`.
-2. Choose an iOS 26 simulator and press **Run** (`⌘R`).
-3. For a real iPhone, select your development team under **Signing & Capabilities**, then connect Apple Health inside the app.
+### Install on your iPhone
+
+1. Clone this repository, then open `SleepCoach.xcodeproj` in Xcode.
+2. Connect and unlock your iPhone. Tap **Trust** on the phone if macOS asks.
+3. In Xcode, select **SleepCoach → SleepCoach target → Signing & Capabilities**. Keep **Automatically manage signing** enabled and choose your Personal Team.
+4. If Xcode says the identifier is unavailable, change **Bundle Identifier** to something unique, such as `com.yourname.sleepcoach`.
+5. Choose your iPhone in the run-destination menu and press **Run** (`⌘R`). Enable **Developer Mode** on the phone if iOS prompts for it, then run once more.
+6. In Sleep Coach, review the Apple Health categories first. Calendar and alarm access remain optional until you use those features.
+
+Apple’s [run-on-device guide](https://developer.apple.com/documentation/xcode/running-your-app-on-simulated-or-physical-devices)
+covers signing and provisioning troubleshooting.
+
+To preview without a phone, choose an iOS 26 simulator and press **Run**. HealthKit
+does not provide real wearable samples there, so use the
+[demo launch arguments](DEVELOPMENT.md#deterministic-simulator-states) for the
+sample states shown above.
 
 For repeatable demo states, tests, and command-line builds, use the
 [developer guide](DEVELOPMENT.md).
@@ -81,6 +96,8 @@ For repeatable demo states, tests, and command-line builds, use the
 > [!NOTE]
 > Simulator QA covers the interface and app logic. Real HealthKit sources,
 > permission sheets, Calendar writes, and AlarmKit delivery require an iPhone.
+> Xcode manages the development profile locally; do not commit Apple account,
+> team, certificate, provisioning-profile, or device identifiers.
 
 ## 🔒 Data & privacy
 

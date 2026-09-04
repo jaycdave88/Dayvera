@@ -485,6 +485,7 @@ struct ExercisePrescription: Identifiable, Codable, Hashable, Sendable {
             muscleGroup: primaryMuscleGroup,
             workingSets: workingSets,
             targetReps: repetitions.lowerBound,
+            targetRepRangeUpper: repetitions.upperBound,
             targetWeight: workingLoad ?? 0,
             loadUnit: loadUnit,
             targetRPE: targetRPE,

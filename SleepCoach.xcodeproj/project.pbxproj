@@ -453,8 +453,8 @@
 				INFOPLIST_FILE = SleepCoach/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Sleep Coach";
 				INFOPLIST_KEY_NSAlarmKitUsageDescription = "Sleep Coach schedules the wake alarm you approve for your next-day plan.";
-				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Sleep Coach reads your first morning commitment and adds a gym block only when you approve it.";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "Sleep Coach reads approved sleep and recovery data to create your private daily wellness plan.";
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Sleep Coach reads your selected calendars and adds workout or privacy-safe Busy events only when you approve a morning plan.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Sleep Coach reads approved sleep, recovery, activity, workout, and body-composition data to create private fitness guidance.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Sleep Coach saves completed workouts to Apple Health when you choose to finish a session.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -491,8 +491,8 @@
 				INFOPLIST_FILE = SleepCoach/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Sleep Coach";
 				INFOPLIST_KEY_NSAlarmKitUsageDescription = "Sleep Coach schedules the wake alarm you approve for your next-day plan.";
-				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Sleep Coach reads your first morning commitment and adds a gym block only when you approve it.";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "Sleep Coach reads approved sleep and recovery data to create your private daily wellness plan.";
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Sleep Coach reads your selected calendars and adds workout or privacy-safe Busy events only when you approve a morning plan.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Sleep Coach reads approved sleep, recovery, activity, workout, and body-composition data to create private fitness guidance.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Sleep Coach saves completed workouts to Apple Health when you choose to finish a session.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

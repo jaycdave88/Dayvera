@@ -7,17 +7,24 @@ app-managed server, advertising, analytics, or cross-app tracking.
 
 ## Data the app uses
 
-- With your permission, Sleep Coach reads sleep, heart-rate variability, and
-  resting heart rate from Apple Health. The contributing source name is kept so
-  the app can explain which device or app supplied a signal.
+- With your permission, Sleep Coach reads supported sleep, heart-rate,
+  heart-rate variability, resting-heart-rate, respiratory-rate, blood-oxygen,
+  temperature, activity, workout, and standard body-composition records from
+  Apple Health. Body weight, body-fat percentage, lean body mass, and BMI are
+  progress context only and never change readiness or workout recommendations.
+  The app keeps non-identifying source and device information so it can explain
+  which app or wearable supplied a signal. It does not import proprietary vendor
+  scores that lack an Apple Health equivalent.
 - Workout templates, active drafts, preferences, applied schedule state, and
   completed workout history are stored in the app's private container. Workout
   history includes session timing, readiness context, sets, loads, notes, and
   Apple Health export status.
-- If you connect Calendar, the app reads the first relevant commitment for the
-  next day. It creates a gym event only after confirmation and uses the generic
-  note “Created by Sleep Coach.” Your Calendar provider may sync that event
-  according to your own account settings.
+- If you connect Calendar, the app reads relevant commitments from only the
+  calendars you select. After confirmation, it can create a detailed workout
+  event on one selected calendar and a neutral event titled “Busy” on other
+  selected calendars. The Busy event contains no health or workout details.
+  Your Calendar providers may sync those events according to your account
+  settings.
 - If you approve wake alarms, the app creates and manages only its own AlarmKit
   alarms.
 

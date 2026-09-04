@@ -302,7 +302,7 @@ final class WorkoutPlanningEngineTests: XCTestCase {
         XCTAssertTrue(reduced.primary.plan.reasonCodes.contains(.weeklyLoadReduced))
     }
 
-    func testProgressionIsOnlyASuggestionAndRequiresConfirmation() throws {
+    func testPlannerProgressionIsConservativeRepsOnlyAndRequiresConfirmation() throws {
         let history = [
             ExerciseTrainingHistory(
                 catalogID: "db-bench",
@@ -328,9 +328,41 @@ final class WorkoutPlanningEngineTests: XCTestCase {
         let suggestion = try XCTUnwrap(bench.progressionSuggestion)
 
         XCTAssertEqual(bench.workingLoad, 60)
+        XCTAssertEqual(suggestion.kind, .repetitions)
         XCTAssertEqual(suggestion.currentLoad, 60)
-        XCTAssertEqual(suggestion.suggestedLoad, 65)
+        XCTAssertEqual(suggestion.suggestedLoad, 60)
+        XCTAssertEqual(suggestion.currentRepetitions, 8)
+        XCTAssertEqual(suggestion.suggestedRepetitions, 9)
         XCTAssertTrue(suggestion.requiresConfirmation)
+    }
+
+    func testPlannerDoesNotSuggestLoadAtTopOfRangeWithoutSetLevelEvidence() throws {
+        let history = [
+            ExerciseTrainingHistory(
+                catalogID: "db-bench",
+                completedSessions: 8,
+                lastPerformedDaysAgo: 4,
+                lastWorkingLoad: 60,
+                lastCompletedReps: 10,
+                lastRPE: 7,
+                progressionEligible: true
+            )
+        ]
+        let state = makeState(
+            band: .high,
+            score: 88,
+            preferredFocus: .upperBody,
+            preferredExerciseIDs: ["db-bench"],
+            exerciseHistory: history,
+            dataQuality: Self.quality(confidence: .high)
+        )
+
+        let candidates = try engine.generate(from: state, curatedPool: exercisePool())
+        let bench = try XCTUnwrap(
+            candidates.primary.plan.exercises.first { $0.catalogID == "db-bench" }
+        )
+
+        XCTAssertNil(bench.progressionSuggestion)
     }
 
     func testProgressionIsOmittedWhenHealthConfidenceIsInsufficient() throws {
