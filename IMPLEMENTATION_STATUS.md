@@ -69,9 +69,9 @@ The iOS 26 simulator scope is implemented and integrated. The project is a nativ
 
 ## Current simulator fixtures
 
-QA uses iPhone 17 Pro and compact-width iPhone simulators on iOS 26. Their machine-specific UUIDs are intentionally omitted; use `xcrun simctl list devices available` and the portable commands in `README.md`.
+QA uses iPhone 17 Pro and compact-width iPhone simulators on iOS 26. Their machine-specific UUIDs are intentionally omitted; use `xcrun simctl list devices available` and the portable commands in `DEVELOPMENT.md`.
 
-Debug builds support deterministic `--demo-data`, `--demo-health-partial`, `--demo-applied-plan`, `--tab=<today|plan|train|exercises|settings>`, `--show-data-sources`, `--show-signal-source=<metric>`, `--show-exercise=<repdb-id>`, `--show-template-editor`, `--show-template-library`, `--show-active-workout`, `--show-progress`, and `--show-recovery-progress` routes. See `README.md` for commands and prerequisites.
+Debug builds support deterministic `--demo-data`, `--demo-health-partial`, `--demo-applied-plan`, `--tab=<today|plan|train|exercises|settings>`, `--show-data-sources`, `--show-signal-source=<metric>`, `--show-exercise=<repdb-id>`, `--show-template-editor`, `--show-template-library`, `--show-active-workout`, `--show-progress`, and `--show-recovery-progress` routes. See `DEVELOPMENT.md` for commands and prerequisites.
 
 All `--show-…` routes self-select their required tab. A paired `--tab` argument is optional.
 
