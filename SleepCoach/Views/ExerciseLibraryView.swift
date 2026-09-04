@@ -17,7 +17,7 @@ struct ExerciseLibraryView: View {
     @State private var selectedDifficulty: String?
     @State private var selectedIDs: [String] = []
     @State private var showingFilters = false
-    @State private var debugExercise: ExerciseDefinition?
+    @State private var detailExercise: ExerciseDefinition?
     @State private var appliedDebugRoute = false
 
     /// A navigation destination for the first-class Exercises tab.
@@ -99,7 +99,7 @@ struct ExerciseLibraryView: View {
             .safeAreaInset(edge: .bottom) {
                 if isSelectionMode { selectionCommitBar }
             }
-            .navigationDestination(item: $debugExercise) { exercise in
+            .navigationDestination(item: $detailExercise) { exercise in
                 detailView(for: exercise)
             }
     }
@@ -269,14 +269,19 @@ struct ExerciseLibraryView: View {
             } label: {
                 HStack(spacing: 10) {
                     ExerciseLibraryRow(exercise: exercise)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .layoutPriority(1)
                     Image(systemName: isExisting || isSelected ? "checkmark.circle.fill" : "circle")
                         .font(.title2)
                         .foregroundStyle(isExisting ? Color.secondary : Color.coachIndigo)
                         .frame(width: 44, height: 44)
                 }
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(1)
             .disabled(isExisting)
             .accessibilityLabel(
                 isExisting
@@ -284,14 +289,16 @@ struct ExerciseLibraryView: View {
                     : (isSelected ? "Remove \(exercise.name) from selection" : "Select \(exercise.name)")
             )
 
-            NavigationLink {
-                detailView(for: exercise)
+            Button {
+                detailExercise = exercise
             } label: {
                 Image(systemName: "info.circle")
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .frame(width: 44, height: 44)
+            .fixedSize()
             .accessibilityLabel("About \(exercise.name)")
         }
         .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 4 : 0)
@@ -490,7 +497,7 @@ struct ExerciseLibraryView: View {
         let identifier = String(argument.dropFirst(prefix.count))
         guard let exercise = store.exercises.first(where: { $0.id == identifier }) else { return }
         appliedDebugRoute = true
-        debugExercise = exercise
+        detailExercise = exercise
         #endif
     }
 

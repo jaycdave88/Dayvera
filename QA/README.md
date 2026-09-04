@@ -8,8 +8,10 @@ These captures use deterministic demo data. They do not contain personal Health,
 - [Today decision](Screenshots/sleepcoach-ux-today-dark.png)
 - [Tomorrow plan](Screenshots/sleepcoach-ux-plan-dark.png)
 - [Train templates](Screenshots/sleepcoach-ux-train-dark.png)
+- [Active workout logger](Screenshots/sleepcoach-final-active-workout-dark.png)
 - [Settings](Screenshots/sleepcoach-ux-settings-dark.png)
-- [Data & Sources](Screenshots/sleepcoach-ux-data-sources-dark.png)
+- [Multi-calendar setup](Screenshots/sleepcoach-final-calendar-setup-dark.png)
+- [Health Data & Sources](Screenshots/sleepcoach-ux-data-sources-dark.png)
 - [Recovery Trends](Screenshots/sleepcoach-ux-recovery-trends-dark.png)
 - [Training History](Screenshots/sleepcoach-ux-training-history-dark.png)
 
@@ -20,6 +22,7 @@ These captures use deterministic demo data. They do not contain personal Health,
 - [Today · Accessibility Extra Large](Screenshots/sleepcoach-ux-compact-today-ax-light.png)
 - [Plan · Accessibility Extra Large](Screenshots/sleepcoach-ux-compact-plan-ax-light.png)
 - [Plan applied feedback · Accessibility Extra Large](Screenshots/sleepcoach-ux-compact-plan-applied-ax-light.png)
+- [Calendar Setup · Accessibility Extra Large](Screenshots/sleepcoach-final-calendar-setup-compact-ax-light.png)
 
 At Accessibility sizes, primary actions remain at least 44 points tall, content reflows vertically, and the complete explanation remains scrollable.
 
@@ -31,7 +34,7 @@ At Accessibility sizes, primary actions remain at least 44 points tall, content 
 - [Exercises · compact Accessibility size](Screenshots/sleepcoach-final-compact-exercises-ax-light.png)
 - [Signal source controls](Screenshots/sleepcoach-final-sleep-source-dark.png)
 - [Partial Health query failure](Screenshots/sleepcoach-final-hrv-query-failure-dark.png)
-- [Data & Sources · compact Accessibility size](Screenshots/sleepcoach-ux-compact-data-sources-ax-light.png)
+- [Health Data & Sources · compact Accessibility size](Screenshots/sleepcoach-ux-compact-data-sources-ax-light.png)
 - [Today · Increase Contrast](Screenshots/sleepcoach-final-compact-today-increase-contrast.png)
 
-Validated behavior includes four-tab ownership (Today, Plan, Train, Progress), one primary action per decision screen, scrollability, compact-width reflow, inline titles at Accessibility sizes, non-color status labels, source/failure recovery copy, protected active-workout drafts, and separated recovery/training trends. Settings and the exercise library are one level below the tabs. The fixtures include Eight Sleep, Hume, and Apple Watch observations so automatic preference and manual-source choices can be reviewed without real HealthKit data.
+Validated behavior includes four-tab ownership (Today, Plan, Train, Progress), one primary action per decision screen, scrollability, compact-width reflow, inline titles at Accessibility sizes, non-color status labels, source/failure recovery copy, separate planning, workout-details, and Busy-copy calendar controls, protected active-workout drafts, and separated recovery/training trends. Settings and the exercise library are one level below the tabs. The fixtures include Eight Sleep, Hume, and Apple Watch observations so automatic preference and manual-source choices can be reviewed without real HealthKit data.

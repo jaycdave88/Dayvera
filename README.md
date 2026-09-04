@@ -31,10 +31,10 @@ explainable workout recommendation and morning schedule.
 <p align="center">
   <a href="./QA/Screenshots/sleepcoach-ux-today-dark.png"><img src="./QA/Screenshots/sleepcoach-ux-today-dark.png" width="260" alt="Today screen showing a validated workout recommendation, recovery, sleep, and recent training" /></a>
   <a href="./QA/Screenshots/sleepcoach-ux-plan-dark.png"><img src="./QA/Screenshots/sleepcoach-ux-plan-dark.png" width="260" alt="Plan screen showing bedtime, wake time, workout time, and calendar commitment" /></a>
-  <a href="./QA/Screenshots/sleepcoach-ux-train-dark.png"><img src="./QA/Screenshots/sleepcoach-ux-train-dark.png" width="260" alt="Train screen showing a readiness-adjusted workout template" /></a>
+  <a href="./QA/Screenshots/sleepcoach-final-active-workout-dark.png"><img src="./QA/Screenshots/sleepcoach-final-active-workout-dark.png" width="260" alt="Active workout logger showing previous performance, pounds, repetitions, completion controls, and safe progression guidance" /></a>
 </p>
 
-<p align="center"><sub>Know how hard to train, work backward from tomorrow, then start a prepared workout.</sub></p>
+<p align="center"><sub>Know how hard to train, work backward from tomorrow, then log a prepared workout.</sub></p>
 
 <p align="center"><strong>Learn → review → trust</strong></p>
 
@@ -44,28 +44,32 @@ explainable workout recommendation and morning schedule.
   <a href="./QA/Screenshots/sleepcoach-ux-data-sources-dark.png"><img src="./QA/Screenshots/sleepcoach-ux-data-sources-dark.png" width="260" alt="Apple Health signal and source controls" /></a>
 </p>
 
-<p align="center"><sub>Simulator captures use deterministic demo data—not personal health information. <a href="./QA/README.md">Open the full QA gallery</a>.</sub></p>
+<p align="center"><sub>Captured from the current app build with deterministic simulator data—not personal health information. <a href="./QA/README.md">Open the full QA gallery</a>.</sub></p>
 
 ## ✨ How it works
 
 `Eight Sleep / Hume / Apple Watch → Apple Health → Sleep Coach`
 
-- **Read:** core recovery, safety, activity, workout, and body-context signals, with every observed source kept visible.
-- **Decide:** build three validated daily workout options from recovery, training history, goals, time, equipment, and exclusions.
-- **Plan:** suggest bedtime, wake time, and gym time across selected calendars; save full details to one calendar and optional privacy-safe “Busy” copies to others.
-- **Train:** build templates from an illustrated exercise catalog, then log previous performance, load, reps, completed sets, and rest time.
+- **Read:** normalize 16 Apple Health types across recovery, safety, training, and body context; inspect every source observed in the current Health window.
+- **Decide:** build three validated daily workout options from recovery, training history, goals, available time, equipment, and exclusions.
+- **Plan:** work backward from tomorrow’s commitments, save full workout details to one calendar, and add optional privacy-safe “Busy” copies to others. [See Calendar Setup](./QA/Screenshots/sleepcoach-final-calendar-setup-dark.png).
+- **Train:** build templates from an illustrated exercise catalog; log previous performance, load, reps, completed sets, safe progression cues, rest time, and resumable drafts.
+- **Progress:** compare 7- or 28-day recovery trends, training sessions, working sets, estimated 1RM trends and bests, and provenance-aware body measurements.
 
-Sleep Coach reads what compatible apps write to Apple Health; it does not call
-private Eight Sleep or Hume APIs. Alarms and Calendar events change only after
-confirmation.
+Sleep Coach reads only what compatible apps write to Apple Health. Vendor-only
+Eight Sleep or Hume scores remain unavailable, and the app never calls their
+private APIs. Alarms and Calendar events are created or replaced only after
+confirmation; Undo removes only app-created entries.
 
 Sleep Coach first reduces the enabled Apple Health signals and local workout
 history into a bounded daily state. A deterministic planner then chooses only
 reviewed catalog exercises, enforces recovery and volume limits, and creates a
-recommended, shorter, and alternate-focus workout. Optional on-device
-personalization may rank those three valid options and improve the explanation;
-it cannot invent exercises or change safety rules. The app does not yet create a
-long-range periodized program or apply suggested weight increases automatically.
+recommended, shorter, and alternate-focus workout. When supported and explicitly
+enabled, on-device personalization may rank those three valid options and improve
+the explanation; deterministic planning remains available when the model is
+unavailable or low-power or thermal conditions block personalization. It cannot
+invent exercises or change safety rules. The app does not yet create a long-range
+periodized program or apply suggested weight increases automatically.
 
 ## 🚀 Run it
 
@@ -77,10 +81,11 @@ source with Xcode.
 
 1. Clone this repository, then open `SleepCoach.xcodeproj` in Xcode.
 2. Connect and unlock your iPhone. Tap **Trust** on the phone if macOS asks.
-3. In Xcode, select **SleepCoach → SleepCoach target → Signing & Capabilities**. Keep **Automatically manage signing** enabled and choose your Personal Team.
+3. In Xcode, select **SleepCoach → SleepCoach target → Signing & Capabilities**. Keep **Automatically manage signing** enabled and choose your Personal Team. If no team appears, add your Apple Account under **Xcode → Settings → Accounts**.
 4. If Xcode says the identifier is unavailable, change **Bundle Identifier** to something unique, such as `com.yourname.sleepcoach`.
 5. Choose your iPhone in the run-destination menu and press **Run** (`⌘R`). Enable **Developer Mode** on the phone if iOS prompts for it, then run once more.
-6. In Sleep Coach, review the Apple Health categories first. Calendar and alarm access remain optional until you use those features.
+6. If iOS blocks the first launch, open **Settings → General → VPN & Device Management**, select the developer identity, and tap **Trust**.
+7. In Sleep Coach, review the Apple Health categories first. Each iPhone grants Health access separately; Calendar and alarm access remain optional until used.
 
 Apple’s [run-on-device guide](https://developer.apple.com/documentation/xcode/running-your-app-on-simulated-or-physical-devices)
 covers signing and provisioning troubleshooting.
@@ -97,7 +102,8 @@ For repeatable demo states, tests, and command-line builds, use the
 > Simulator QA covers the interface and app logic. Real HealthKit sources,
 > permission sheets, Calendar writes, and AlarmKit delivery require an iPhone.
 > Xcode manages the development profile locally; do not commit Apple account,
-> team, certificate, provisioning-profile, or device identifiers.
+> team, certificate, provisioning-profile, or device identifiers. Free Personal
+> Team installs are temporary and typically need to be rebuilt every seven days.
 
 ## 🔒 Data & privacy
 
@@ -125,4 +131,5 @@ Exercise content and illustrations are fetched at runtime from
 [RepDB](https://repdb.co) under its
 [dataset terms](https://github.com/RepDB/exercise-dataset/blob/main/LICENSE-DATA.md)
 and are not redistributed in this repository. See
-[third-party notices](THIRD_PARTY_NOTICES.md).
+[third-party notices](THIRD_PARTY_NOTICES.md). Catalog media currently provides
+Start/Finish illustrations rather than full-motion exercise video.
