@@ -52,7 +52,7 @@ The iOS 26 simulator scope is implemented and integrated. The project is a nativ
 ## QA evidence completed
 
 - An iOS 26 Simulator build succeeded after catalog, navigation, metrics, and workout integration.
-- The release-candidate suite ran **124 tests with zero failures or skips** on both an iPhone 17 Pro iOS 26 simulator and the connected development iPhone before it was unplugged.
+- The release-candidate suite ran **124 tests with zero failures or skips** on both an iPhone 17 Pro iOS 26 simulator and a connected development iPhone. The complete suite was repeated against the latest committed build on iOS 26.6.1 after reconnecting the phone, again with **124 passed, 0 failed, and 0 skipped**.
 - A fresh simulator build also succeeded after all functional and UI audit fixes. The current integrated Swift source is green.
 - Final unsigned Debug and Release builds both succeeded against the physical iOS 26 device SDK with signing disabled, static analysis passed, and a current signed Debug device build succeeded.
 - A clean Release archive succeeded, and its shipped app executable contained no machine-specific absolute source paths. Debug symbols remain in the separate dSYM rather than the app bundle.
@@ -69,7 +69,7 @@ The iOS 26 simulator scope is implemented and integrated. The project is a nativ
 - Xcode's iOS 26.5 platform support (23F77, 8.52 GB) was downloaded and installed, resolving the prior device-platform mismatch.
 - The app and test targets use automatic signing. The public project intentionally leaves `DEVELOPMENT_TEAM` blank; choose a local team in Xcode before the next phone deployment. The bundle identifiers are `com.momoai.personalassistant.sleepcoach` and `.tests`, and HealthKit capability metadata is declared alongside the entitlements.
 - Automatic provisioning registered the development phone and generated a profile containing the HealthKit and HealthKit background-delivery entitlements. Provisioning profiles and certificates are excluded from version control.
-- Signed physical-device builds use the local development identity without writing its team or device identifiers into the public project. The latest release-candidate suite completed 124 tests with zero failures or skips on the connected phone before it was unplugged. Installation and hands-on permission/source acceptance resume when the phone is reconnected and unlocked.
+- Signed physical-device builds use the local development identity without writing its team or device identifiers into the public project. Commit `38ddef2` was signed, installed, launched, and left running on the connected iPhone; its physical-device suite completed 124 tests with zero failures or skips. No new SleepCoach crash diagnostic was produced during launch or the attached startup-log pass.
 - A clean simulator compile also succeeded after the project-signing changes.
 
 ## Current simulator fixtures
@@ -113,6 +113,6 @@ xcodebuild test \
 
 ## Remaining acceptance work
 
-On the development iPhone, complete runtime acceptance for real Eight Sleep/Hume/Apple Watch samples and exact source attribution; first-run, limited-history, revoked, and restored HealthKit access; stale and mixed-source fallback; saving a finished workout to Health; Calendar authorization/event creation across timezone and DST changes; and an approved AlarmKit wake alarm firing.
+On the development iPhone, complete hands-on runtime acceptance for real Eight Sleep/Hume/Apple Watch samples and exact source attribution; first-run, limited-history, revoked, and restored HealthKit access; stale and mixed-source fallback; saving a finished workout to Health; Calendar authorization/event creation across timezone and DST changes; and an approved AlarmKit wake alarm firing.
 
-Simulator QA validates layout, navigation, persistence, algorithms, catalog networking/cache behavior, and deterministic lifecycle flows. The next phone session still needs runtime acceptance for real vendor sync timing, HealthKit permission sheets and data provenance, and an AlarmKit alert firing on hardware.
+Automated simulator and physical-device QA validate layout fixtures, navigation, persistence, algorithms, catalog networking/cache behavior, deterministic lifecycle flows, signing, installation, and launch. Manual acceptance is still required for real vendor sync timing, Apple-controlled HealthKit permission sheets and data provenance, and an AlarmKit alert firing on hardware.
