@@ -80,8 +80,7 @@ Physical-device acceptance remains required for HealthKit permission states and 
 2. Introduce a workout-flow coordinator so template selection, editing, and an active session cannot stack conflicting modal states.
 3. Replace remaining generic global notices with local success/failure feedback near the affected content.
 4. Add VoiceOver traversal tests and chart descriptors in addition to Dynamic Type screenshots.
-5. Move health-adjacent draft/status persistence to an explicitly selected iOS Data Protection and backup policy before production release.
-6. Add favorites/recent exercises only after observing real catalog-search behavior; do not add more navigation until evidence shows it is needed.
+5. Add favorites/recent exercises only after observing real catalog-search behavior; do not add more navigation until evidence shows it is needed.
 
 ## Design references
 

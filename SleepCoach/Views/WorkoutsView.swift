@@ -1,4 +1,5 @@
 import Combine
+import Foundation
 import SwiftData
 import SwiftUI
 
@@ -673,8 +674,36 @@ private struct ActiveWorkoutDraft: Codable, Hashable {
     let notes: String
 }
 
+func normalizedWorkoutStart(
+    savedStart: Date,
+    now: Date,
+    maximumResumeAge: TimeInterval = 6 * 60 * 60
+) -> Date {
+    let age = now.timeIntervalSince(savedStart)
+    guard age >= 0, age <= maximumResumeAge else { return now }
+    return savedStart
+}
+
+func validWorkoutIntervalStart(
+    savedStart: Date,
+    end: Date,
+    maximumResumeAge: TimeInterval = 6 * 60 * 60,
+    staleFallbackDuration: TimeInterval = 60
+) -> Date {
+    let normalized = normalizedWorkoutStart(
+        savedStart: savedStart,
+        now: end,
+        maximumResumeAge: maximumResumeAge
+    )
+    guard normalized < end else {
+        return end.addingTimeInterval(-max(staleFallbackDuration, 1))
+    }
+    return normalized
+}
+
 private struct ActiveWorkoutDraftStore {
     private static let key = "activeWorkoutDraft"
+    private static let fileName = "active-workout-draft.json"
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
@@ -682,25 +711,71 @@ private struct ActiveWorkoutDraftStore {
     }
 
     func load() -> ActiveWorkoutDraft? {
-        guard let data = defaults.data(forKey: Self.key) else { return nil }
-        return try? JSONDecoder().decode(ActiveWorkoutDraft.self, from: data)
+        if let fileURL,
+           let data = try? Data(contentsOf: fileURL),
+           let draft = try? JSONDecoder().decode(ActiveWorkoutDraft.self, from: data) {
+            return draft
+        }
+        guard let legacyData = defaults.data(forKey: Self.key),
+              let draft = try? JSONDecoder().decode(ActiveWorkoutDraft.self, from: legacyData) else {
+            return nil
+        }
+        // Migrate existing drafts out of backup-managed preferences.
+        _ = save(draft)
+        return draft
     }
 
-    func save(_ draft: ActiveWorkoutDraft) {
-        guard let data = try? JSONEncoder().encode(draft) else { return }
-        defaults.set(data, forKey: Self.key)
+    @discardableResult
+    func save(_ draft: ActiveWorkoutDraft) -> Bool {
+        guard let data = try? JSONEncoder().encode(draft) else { return false }
+        guard var fileURL else { return false }
+        do {
+            var directoryURL = fileURL.deletingLastPathComponent()
+            try FileManager.default.createDirectory(
+                at: directoryURL,
+                withIntermediateDirectories: true
+            )
+            var directoryValues = URLResourceValues()
+            directoryValues.isExcludedFromBackup = true
+            try directoryURL.setResourceValues(directoryValues)
+            try data.write(to: fileURL, options: [.atomic, .completeFileProtection])
+            var resourceValues = URLResourceValues()
+            resourceValues.isExcludedFromBackup = true
+            try fileURL.setResourceValues(resourceValues)
+            defaults.removeObject(forKey: Self.key)
+            return true
+        } catch {
+            // Keep any pre-migration legacy value untouched, but do not create a
+            // new backup-managed or less-protected copy of a workout draft.
+            return false
+        }
     }
 
     func clear() {
+        if let fileURL { try? FileManager.default.removeItem(at: fileURL) }
         defaults.removeObject(forKey: Self.key)
+    }
+
+    private var fileURL: URL? {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+            .first?
+            .appendingPathComponent(Self.fileName, isDirectory: false)
     }
 }
 
 struct ActiveWorkoutView: View {
+    private enum FocusedField: Hashable {
+        case weight(UUID)
+        case repetitions(UUID)
+        case effort(UUID)
+        case notes
+    }
+
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var appModel: AppModel
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.scenePhase) private var scenePhase
 
     let templateID: UUID
     let templateName: String
@@ -713,6 +788,8 @@ struct ActiveWorkoutView: View {
     @State private var showingFinish = false
     @State private var showingDiscard = false
     @State private var notes = ""
+    @State private var resumeNotice: String?
+    @FocusState private var focusedField: FocusedField?
     private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     private let draftStore = ActiveWorkoutDraftStore()
 
@@ -722,9 +799,12 @@ struct ActiveWorkoutView: View {
         exercises = template.exercises
         self.adjustment = adjustment
         if let draft = ActiveWorkoutDraftStore().load(), draft.templateID == template.id {
+            let now = Date.now
+            let normalizedStart = normalizedWorkoutStart(savedStart: draft.startedAt, now: now)
             _sets = State(initialValue: backfillingCatalogIDs(in: draft.sets, from: template.exercises))
-            _startedAt = State(initialValue: draft.startedAt)
+            _startedAt = State(initialValue: normalizedStart)
             _notes = State(initialValue: draft.notes)
+            _resumeNotice = State(initialValue: normalizedStart == draft.startedAt ? nil : "This draft was from an earlier session, so its timer restarted. Your sets and notes were kept.")
         } else {
             var proposed: [ActiveSet] = []
             let setCounts = adaptedWorkingSetCounts(for: template.exercises, volumeMultiplier: adjustment.volumeMultiplier)
@@ -750,6 +830,14 @@ struct ActiveWorkoutView: View {
     var body: some View {
         NavigationStack {
             List {
+                if let resumeNotice {
+                    Section {
+                        Label(resumeNotice, systemImage: "clock.arrow.circlepath")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
                 Section {
                     HStack {
                         Label(elapsed, systemImage: "timer")
@@ -763,6 +851,18 @@ struct ActiveWorkoutView: View {
                         }
                     }
                     .font(.headline.monospacedDigit())
+                }
+
+                if let workoutValidationMessage {
+                    Section("Fix before finishing") {
+                        Label {
+                            Text(workoutValidationMessage)
+                        } icon: {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(Color.coachAmber)
+                        }
+                        .font(.subheadline)
+                    }
                 }
 
                 ForEach(exercises) { exercise in
@@ -780,7 +880,7 @@ struct ActiveWorkoutView: View {
                                     columnHeader("LB", width: 64)
                                     columnHeader("REPS", width: 52)
                                     columnHeader("RPE", width: 52)
-                                    Color.clear.frame(width: 32, height: 1)
+                                    Color.clear.frame(width: 44, height: 1)
                                 }
 
                                 ForEach($sets) { $set in
@@ -793,8 +893,12 @@ struct ActiveWorkoutView: View {
                     }
                 }
 
-                Section("Session notes") { TextField("Energy, soreness, substitutions…", text: $notes, axis: .vertical) }
+                Section("Session notes") {
+                    TextField("Energy, soreness, substitutions…", text: $notes, axis: .vertical)
+                        .focused($focusedField, equals: .notes)
+                }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle(templateName)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -802,7 +906,16 @@ struct ActiveWorkoutView: View {
                     Button("Close") { showingDiscard = true }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Finish") { showingFinish = true }.disabled(!sets.contains { $0.isComplete })
+                    Button("Finish") { showingFinish = true }
+                        .disabled(!sets.contains { $0.isComplete } || workoutValidationMessage != nil)
+                        .accessibilityHint(
+                            workoutValidationMessage
+                                ?? "Saves the completed sets and ends this workout"
+                        )
+                }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") { focusedField = nil }
                 }
             }
             .onReceive(ticker) { date in
@@ -812,6 +925,10 @@ struct ActiveWorkoutView: View {
             .onAppear { saveDraft() }
             .onChange(of: sets) { _, _ in saveDraft() }
             .onChange(of: notes) { _, _ in saveDraft() }
+            .onChange(of: scenePhase) { _, phase in
+                guard phase == .active else { return }
+                normalizeDraftTimingIfNeeded()
+            }
             .confirmationDialog("Finish this workout?", isPresented: $showingFinish, titleVisibility: .visible) {
                 Button("Save completed sets") { finishWorkout() }
                 Button("Cancel", role: .cancel) {}
@@ -847,7 +964,7 @@ struct ActiveWorkoutView: View {
             weightField(set).frame(width: 64)
             repsField(set).frame(width: 52)
             rpeField(set).frame(width: 52)
-            completionButton(set).frame(width: 32)
+            completionButton(set).frame(width: 44)
         }
         .padding(.vertical, 3)
         .opacity(set.wrappedValue.isComplete ? 0.6 : 1)
@@ -871,25 +988,37 @@ struct ActiveWorkoutView: View {
     private func weightField(_ set: Binding<ActiveSet>) -> some View {
         TextField("Weight", value: set.weight, format: .number.precision(.fractionLength(0...1)))
             .keyboardType(.decimalPad)
+            .focused($focusedField, equals: .weight(set.wrappedValue.id))
+            .frame(minHeight: 44)
             .multilineTextAlignment(.center)
             .textFieldStyle(.roundedBorder)
-            .accessibilityLabel("Set \(set.wrappedValue.setNumber) weight in pounds")
+            .accessibilityLabel(
+                "\(set.wrappedValue.exerciseName), set \(set.wrappedValue.setNumber), weight in pounds"
+            )
     }
 
     private func repsField(_ set: Binding<ActiveSet>) -> some View {
         TextField("Reps", value: set.reps, format: .number)
             .keyboardType(.numberPad)
+            .focused($focusedField, equals: .repetitions(set.wrappedValue.id))
+            .frame(minHeight: 44)
             .multilineTextAlignment(.center)
             .textFieldStyle(.roundedBorder)
-            .accessibilityLabel("Set \(set.wrappedValue.setNumber) repetitions")
+            .accessibilityLabel(
+                "\(set.wrappedValue.exerciseName), set \(set.wrappedValue.setNumber), repetitions"
+            )
     }
 
     private func rpeField(_ set: Binding<ActiveSet>) -> some View {
         TextField("RPE", value: set.rpe, format: .number.precision(.fractionLength(0...1)))
             .keyboardType(.decimalPad)
+            .focused($focusedField, equals: .effort(set.wrappedValue.id))
+            .frame(minHeight: 44)
             .multilineTextAlignment(.center)
             .textFieldStyle(.roundedBorder)
-            .accessibilityLabel("Set \(set.wrappedValue.setNumber) effort RPE")
+            .accessibilityLabel(
+                "\(set.wrappedValue.exerciseName), set \(set.wrappedValue.setNumber), effort RPE"
+            )
     }
 
     private func completionButton(_ set: Binding<ActiveSet>) -> some View {
@@ -902,9 +1031,14 @@ struct ActiveWorkoutView: View {
             Image(systemName: set.wrappedValue.isComplete ? "checkmark.circle.fill" : "circle")
                 .font(.title2)
                 .foregroundStyle(set.wrappedValue.isComplete ? Color.coachMint : .secondary)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(set.wrappedValue.isComplete ? "Mark set incomplete" : "Complete set")
+        .accessibilityLabel(
+            "\(set.wrappedValue.exerciseName), set \(set.wrappedValue.setNumber), "
+                + (set.wrappedValue.isComplete ? "mark incomplete" : "mark complete")
+        )
     }
 
     private var elapsed: String {
@@ -917,11 +1051,48 @@ struct ActiveWorkoutView: View {
         return max(Int(ceil(restDeadline.timeIntervalSince(currentTime))), 0)
     }
 
+    private var workoutValidationMessage: String? {
+        for set in sets where set.isComplete {
+            if !set.weight.isFinite || !(0...1_000).contains(set.weight) {
+                return "\(set.exerciseName), set \(set.setNumber): enter a load from 0 to 1,000 lb."
+            }
+            if !(1...1_000).contains(set.reps) {
+                return "\(set.exerciseName), set \(set.setNumber): enter 1 to 1,000 repetitions."
+            }
+            if !set.rpe.isFinite || !(1...10).contains(set.rpe) {
+                return "\(set.exerciseName), set \(set.setNumber): enter an RPE from 1 to 10."
+            }
+        }
+        return nil
+    }
+
     private func saveDraft() {
-        draftStore.save(.init(templateID: templateID, startedAt: startedAt, sets: sets, notes: notes))
+        let saved = draftStore.save(.init(
+            templateID: templateID,
+            startedAt: startedAt,
+            sets: sets,
+            notes: notes
+        ))
+        if !saved {
+            resumeNotice = "This draft couldn’t be autosaved. Keep Sleep Coach open until you finish or try again after unlocking your iPhone."
+        }
+    }
+
+    private func normalizeDraftTimingIfNeeded(now: Date = .now) {
+        let normalizedStart = normalizedWorkoutStart(savedStart: startedAt, now: now)
+        currentTime = now
+        guard normalizedStart != startedAt else { return }
+
+        startedAt = normalizedStart
+        restDeadline = nil
+        resumeNotice = "This draft was from an earlier session, so its timer restarted. Your sets and notes were kept."
+        saveDraft()
     }
 
     private func finishWorkout() {
+        guard workoutValidationMessage == nil else { return }
+        let end = Date.now
+        let effectiveStart = validWorkoutIntervalStart(savedStart: startedAt, end: end)
         let completed = sets.filter(\.isComplete).map {
             CompletedSet(
                 exerciseID: $0.exerciseID,
@@ -932,14 +1103,13 @@ struct ActiveWorkoutView: View {
                 reps: $0.reps,
                 rpe: $0.rpe,
                 isWarmup: false,
-                completedAt: .now
+                completedAt: end
             )
         }
-        let end = Date.now
         let record = WorkoutSessionRecord(
             templateID: templateID,
             templateName: templateName,
-            startedAt: startedAt,
+            startedAt: effectiveStart,
             endedAt: end,
             readiness: appModel.snapshot.readinessBand,
             readinessScore: appModel.snapshot.readinessScore,
@@ -955,7 +1125,7 @@ struct ActiveWorkoutView: View {
             return
         }
         draftStore.clear()
-        Task { await appModel.recordStrengthWorkout(start: startedAt, end: end) }
+        Task { await appModel.recordStrengthWorkout(record, in: modelContext) }
         dismiss()
     }
 }

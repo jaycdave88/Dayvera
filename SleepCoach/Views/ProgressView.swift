@@ -23,6 +23,7 @@ struct TrainingHistoryView: View {
 
 private struct ProgressDetailView: View {
     @EnvironmentObject private var appModel: AppModel
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Query(sort: \WorkoutSessionRecord.startedAt, order: .reverse) private var sessions: [WorkoutSessionRecord]
     let section: ProgressSection
@@ -57,6 +58,7 @@ private struct ProgressDetailView: View {
             }
         }
         .pickerStyle(.segmented)
+        .frame(minHeight: 44)
         .accessibilityLabel("Date range")
     }
 
@@ -357,29 +359,115 @@ private struct ProgressDetailView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 ForEach(periodSessions) { session in
-                    Group {
-                        if dynamicTypeSize.isAccessibilitySize {
-                            VStack(alignment: .leading, spacing: 10) {
-                                workoutHistoryIdentity(session)
-                                Text("Readiness \(session.readinessScore)")
-                                    .font(.caption.weight(.semibold))
-                                    .padding(.leading, 48)
-                            }
-                        } else {
-                            HStack(alignment: .top, spacing: 12) {
-                                workoutHistoryIdentity(session)
-                                Spacer(minLength: 8)
-                                Text("Readiness \(session.readinessScore)")
-                                    .font(.caption.weight(.semibold))
-                                    .multilineTextAlignment(.trailing)
+                    VStack(alignment: .leading, spacing: 10) {
+                        Group {
+                            if dynamicTypeSize.isAccessibilitySize {
+                                VStack(alignment: .leading, spacing: 10) {
+                                    workoutHistoryIdentity(session)
+                                    Text("Readiness \(session.readinessScore)")
+                                        .font(.caption.weight(.semibold))
+                                        .padding(.leading, 48)
+                                }
+                            } else {
+                                HStack(alignment: .top, spacing: 12) {
+                                    workoutHistoryIdentity(session)
+                                    Spacer(minLength: 8)
+                                    Text("Readiness \(session.readinessScore)")
+                                        .font(.caption.weight(.semibold))
+                                        .multilineTextAlignment(.trailing)
+                                }
                             }
                         }
+                        .accessibilityElement(children: .combine)
+
+                        Divider()
+                        workoutExportStatus(session)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(14)
                     .background(Color.coachSurface, in: RoundedRectangle(cornerRadius: 16))
-                    .accessibilityElement(children: .combine)
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func workoutExportStatus(_ session: WorkoutSessionRecord) -> some View {
+        let isExporting = appModel.isExportingWorkout(session.id)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Label(
+                    workoutExportLabel(session.healthExportState, isExporting: isExporting),
+                    systemImage: workoutExportSymbol(session.healthExportState)
+                )
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.primary)
+                Spacer(minLength: 8)
+                if isExporting {
+                    ProgressView()
+                        .controlSize(.small)
+                        .accessibilityHidden(true)
+                }
+            }
+
+            if session.healthExportState == .failed,
+               let message = session.healthExportErrorMessage,
+               !message.isEmpty {
+                Text("Saved in Sleep Coach, but it couldn’t be added to Apple Health.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                DisclosureGroup("Technical details") {
+                    Text(message)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+                .font(.caption2)
+            } else if session.healthExportState == .pending, !isExporting {
+                Text("Saved in Sleep Coach but not yet added to Apple Health. Try again.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            } else if session.healthExportState == .unknown {
+                Text("This workout was saved before export tracking was available, so its Apple Health status can’t be verified.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            if (session.healthExportState == .pending || session.healthExportState == .failed), !isExporting {
+                Button {
+                    Task {
+                        await appModel.retryStrengthWorkoutExport(session, in: modelContext)
+                    }
+                } label: {
+                    Label("Retry export", systemImage: "arrow.clockwise")
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.bordered)
+                .accessibilityHint("Retries this saved workout with Apple Health")
+            }
+        }
+    }
+
+    private func workoutExportLabel(
+        _ state: WorkoutHealthExportState,
+        isExporting: Bool
+    ) -> String {
+        if isExporting { return "Exporting to Apple Health" }
+        return switch state {
+        case .unknown: "Apple Health status unavailable"
+        case .pending: "Apple Health export pending"
+        case .exported: "Exported to Apple Health"
+        case .failed: "Apple Health export failed"
+        }
+    }
+
+    private func workoutExportSymbol(_ state: WorkoutHealthExportState) -> String {
+        switch state {
+        case .unknown: "questionmark.circle"
+        case .pending: "clock.arrow.circlepath"
+        case .exported: "checkmark.circle.fill"
+        case .failed: "exclamationmark.triangle.fill"
         }
     }
 

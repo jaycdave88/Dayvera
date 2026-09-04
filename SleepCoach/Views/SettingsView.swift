@@ -45,9 +45,13 @@ struct SettingsView: View {
             }
 
             Section("Privacy and limits") {
-                Label("On-device storage only", systemImage: "iphone.gen3")
+                Label("Local app storage; no Sleep Coach cloud", systemImage: "iphone.gen3")
                 Label("No account, server, ads, or analytics", systemImage: "hand.raised.fill")
                 Label("Wellness guidance—not diagnosis", systemImage: "cross.case")
+                Link(
+                    "Read privacy policy",
+                    destination: URL(string: "https://github.com/jaycdave88/SleepCoach/blob/main/PRIVACY.md")!
+                )
                 Text("Apple Health may return no samples when a read category is denied. Sleep Coach reports only what it can verify: query health, received samples, freshness, and source provenance.")
                     .font(.caption).foregroundStyle(.secondary)
             }

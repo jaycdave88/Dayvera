@@ -24,8 +24,16 @@ final class DemoHealthService: HealthDataProviding {
         )
     }
 
-    func saveStrengthWorkout(start: Date, end: Date) async throws {}
-    func configureBackgroundDelivery(onUpdate: @escaping @Sendable () async -> Void) async {}
+    func saveStrengthWorkout(
+        sessionID: UUID,
+        syncVersion: Int,
+        start: Date,
+        end: Date
+    ) async throws {}
+    @MainActor
+    func configureBackgroundDelivery(
+        onUpdate: @escaping @MainActor @Sendable (HealthBackgroundEvent) async -> Void
+    ) async throws {}
 
     private static func samples(now: Date) -> [MetricSample] {
         let calendar = Calendar.current
@@ -123,6 +131,8 @@ final class DemoHealthService: HealthDataProviding {
 }
 
 final class DemoCalendarService: CalendarProviding {
+    var authorizationLabel: String { "Connected" }
+
     func requestAccess() async throws -> Bool { true }
 
     func firstCommitment(on date: Date) async throws -> CalendarCommitment? {
@@ -137,11 +147,13 @@ final class DemoCalendarService: CalendarProviding {
     }
 
     func createGymEvent(start: Date, end: Date, note: String) async throws {}
+    func hasGymEvent(start: Date, end: Date) throws -> Bool { true }
 }
 
 final class DemoAlarmService: AlarmScheduling {
     var authorizationLabel: String { "Demo ready" }
     func scheduleWakeAlarm(at date: Date) async throws {}
+    func hasWakeAlarm(scheduledAt date: Date) throws -> Bool { true }
     func cancelWakeAlarm() throws {}
 }
 
@@ -195,7 +207,8 @@ enum DemoDataSeeder {
                 readiness: dayOffset == 6 ? .moderate : .high,
                 readinessScore: dayOffset == 6 ? 64 : 82,
                 sets: sets,
-                notes: "Simulator design-review data"
+                notes: "Simulator design-review data",
+                healthExportState: .exported
             ))
         }
         try context.save()

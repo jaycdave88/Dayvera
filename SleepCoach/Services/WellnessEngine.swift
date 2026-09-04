@@ -848,7 +848,7 @@ struct WellnessEngine: WellnessEvaluating {
         }
         return switch snapshot.readinessBand {
         case .high:
-            .init(title: "Full performance session", detail: "Keep planned volume. Progress only when recent reps and RPE support it.", volumeMultiplier: 1, rpeCap: nil, allowProgression: true)
+            .init(title: "Full performance session", detail: "Keep planned volume. Review your recent sets before choosing a load increase; Sleep Coach does not change weights automatically.", volumeMultiplier: 1, rpeCap: nil, allowProgression: true)
         case .moderate:
             .init(title: "Reduce volume 25%", detail: "Keep technique and normal working weight, remove accessory sets, and cap effort at RPE 8.", volumeMultiplier: 0.75, rpeCap: 8, allowProgression: false)
         case .low:

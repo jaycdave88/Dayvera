@@ -5,8 +5,68 @@ protocol HealthDataProviding {
     var isAvailable: Bool { get }
     func requestAuthorization() async throws
     func fetchSamples(since startDate: Date, through endDate: Date) async throws -> HealthSampleFetchResult
-    func saveStrengthWorkout(start: Date, end: Date) async throws
-    func configureBackgroundDelivery(onUpdate: @escaping @Sendable () async -> Void) async
+    func saveStrengthWorkout(
+        sessionID: UUID,
+        syncVersion: Int,
+        start: Date,
+        end: Date
+    ) async throws
+    @MainActor
+    func configureBackgroundDelivery(
+        onUpdate: @escaping @MainActor @Sendable (HealthBackgroundEvent) async -> Void
+    ) async throws
+}
+
+/// The exact reason HealthKit invoked an observer. Keeping the triggering type
+/// lets the refresh layer avoid acknowledging an update when that one query was
+/// part of an otherwise-successful partial refresh.
+enum HealthBackgroundEvent: Equatable, Sendable {
+    case dataChanged(kind: MetricKind?, typeIdentifier: String)
+    case observerFailed(kind: MetricKind?, typeIdentifier: String, message: String)
+}
+
+protocol HealthStoreProviding: AnyObject {
+    var underlyingHealthStore: HKHealthStore { get }
+    func requestAuthorization(
+        toShare typesToShare: Set<HKSampleType>,
+        read typesToRead: Set<HKObjectType>
+    ) async throws
+    func execute(_ query: HKQuery)
+    func stop(_ query: HKQuery)
+    func enableBackgroundDelivery(
+        for type: HKObjectType,
+        frequency: HKUpdateFrequency
+    ) async throws
+}
+
+extension HKHealthStore: HealthStoreProviding {
+    var underlyingHealthStore: HKHealthStore { self }
+}
+
+protocol HealthObserverQueryMaking {
+    @MainActor
+    func makeObserverQuery(
+        sampleType: HKSampleType,
+        updateHandler: @escaping @Sendable (
+            HKObserverQuery,
+            @escaping HKObserverQueryCompletionHandler,
+            (any Error)?
+        ) -> Void
+    ) -> HKObserverQuery
+}
+
+struct HealthObserverQueryFactory: HealthObserverQueryMaking {
+    @MainActor
+    func makeObserverQuery(
+        sampleType: HKSampleType,
+        updateHandler: @escaping @Sendable (
+            HKObserverQuery,
+            @escaping HKObserverQueryCompletionHandler,
+            (any Error)?
+        ) -> Void
+    ) -> HKObserverQuery {
+        HKObserverQuery(sampleType: sampleType, predicate: nil, updateHandler: updateHandler)
+    }
 }
 
 /// A type-specific read failure. HealthKit intentionally does not disclose whether
@@ -34,11 +94,32 @@ final class HealthKitService: HealthDataProviding {
         let failure: HealthQueryFailure?
     }
 
-    private let store: HKHealthStore
-    private var sleepObserver: HKObserverQuery?
+    private let store: any HealthStoreProviding
+    private let observerQueryFactory: any HealthObserverQueryMaking
+    @MainActor private var observersByTypeIdentifier: [String: HKObserverQuery] = [:]
+    @MainActor private var backgroundDeliveryEnabledTypeIdentifiers: Set<String> = []
+    @MainActor private var backgroundDeliveryConfigurationTask: Task<Void, Error>?
+    @MainActor private var backgroundUpdateHandler: (
+        @MainActor @Sendable (HealthBackgroundEvent) async -> Void
+    )?
+
+    static let readMetricTypeIdentifiers: Set<String> = [
+        HKCategoryTypeIdentifier.sleepAnalysis.rawValue,
+        HKQuantityTypeIdentifier.heartRateVariabilitySDNN.rawValue,
+        HKQuantityTypeIdentifier.restingHeartRate.rawValue
+    ]
 
     init(store: HKHealthStore = HKHealthStore()) {
         self.store = store
+        self.observerQueryFactory = HealthObserverQueryFactory()
+    }
+
+    init(
+        store: any HealthStoreProviding,
+        observerQueryFactory: any HealthObserverQueryMaking
+    ) {
+        self.store = store
+        self.observerQueryFactory = observerQueryFactory
     }
 
     var isAvailable: Bool { HKHealthStore.isHealthDataAvailable() }
@@ -60,7 +141,7 @@ final class HealthKitService: HealthDataProviding {
 
     func requestAuthorization() async throws {
         guard isAvailable else { throw HealthDataError.unavailable }
-        try await store.requestAuthorization(toShare: shareTypes, read: readTypes)
+        try await store.requestAuthorization(toShare: [], read: readTypes)
     }
 
     func fetchSamples(since startDate: Date, through endDate: Date = .now) async throws -> HealthSampleFetchResult {
@@ -106,39 +187,184 @@ final class HealthKitService: HealthDataProviding {
         )
     }
 
-    func saveStrengthWorkout(start: Date, end: Date) async throws {
-        guard end > start else { return }
+    func saveStrengthWorkout(
+        sessionID: UUID,
+        syncVersion: Int,
+        start: Date,
+        end: Date
+    ) async throws {
+        guard end > start else { throw HealthDataError.invalidWorkoutInterval }
+        guard syncVersion > 0 else { throw HealthDataError.invalidWorkoutSyncVersion }
+        try await store.requestAuthorization(toShare: shareTypes, read: [])
+
         let configuration = HKWorkoutConfiguration()
         configuration.activityType = .traditionalStrengthTraining
         configuration.locationType = .indoor
 
         let builder = HKWorkoutBuilder(
-            healthStore: store,
+            healthStore: store.underlyingHealthStore,
             configuration: configuration,
             device: .local()
         )
         try await builder.beginCollection(at: start)
-        try await builder.addMetadata([HKMetadataKeyIndoorWorkout: true])
+        try await builder.addMetadata(Self.workoutMetadata(
+            sessionID: sessionID,
+            syncVersion: syncVersion
+        ))
         try await builder.endCollection(at: end)
         _ = try await builder.finishWorkout()
     }
 
-    func configureBackgroundDelivery(onUpdate: @escaping @Sendable () async -> Void) async {
-        guard sleepObserver == nil,
-              let sleep = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else { return }
-        let observer = HKObserverQuery(sampleType: sleep, predicate: nil) { _, completion, error in
-            guard error == nil else {
-                completion()
+    @MainActor
+    func configureBackgroundDelivery(
+        onUpdate: @escaping @MainActor @Sendable (HealthBackgroundEvent) async -> Void
+    ) async throws {
+        // An observer can fail while an enable task is suspended. In that case a
+        // re-entrant caller initially joins the old task; verify after it settles
+        // and run one repair pass so the failed metric is not left unobserved.
+        for _ in 0..<2 {
+            let task = try beginBackgroundDeliveryConfiguration(onUpdate: onUpdate)
+            try await task.value
+            if Set(observersByTypeIdentifier.keys) == Self.readMetricTypeIdentifiers,
+               backgroundDeliveryEnabledTypeIdentifiers == Self.readMetricTypeIdentifiers {
                 return
             }
-            Task {
-                await onUpdate()
-                completion()
+        }
+
+        let missing = Self.readMetricTypeIdentifiers
+            .subtracting(observersByTypeIdentifier.keys)
+            .sorted()
+            .first
+        throw HealthDataError.backgroundDeliveryConfigurationFailed(
+            typeIdentifier: missing,
+            message: "One or more Apple Health observers could not be restored."
+        )
+    }
+
+    /// Installs every observer query synchronously before starting the first
+    /// asynchronous `enableBackgroundDelivery` request. The app delegate uses
+    /// this through AppModel during `didFinishLaunching`, as Apple recommends.
+    /// Concurrent callers share the same configuration task.
+    @MainActor
+    @discardableResult
+    func beginBackgroundDeliveryConfiguration(
+        onUpdate: @escaping @MainActor @Sendable (HealthBackgroundEvent) async -> Void
+    ) throws -> Task<Void, Error> {
+        guard isAvailable else { throw HealthDataError.unavailable }
+        let sampleTypes = readTypes.compactMap { $0 as? HKSampleType }
+            .sorted { $0.identifier < $1.identifier }
+        guard Set(sampleTypes.map(\.identifier)) == Self.readMetricTypeIdentifiers else {
+            throw HealthDataError.backgroundDeliveryConfigurationFailed(
+                typeIdentifier: nil,
+                message: "One or more requested Apple Health data types are unavailable."
+            )
+        }
+
+        backgroundUpdateHandler = onUpdate
+        if let backgroundDeliveryConfigurationTask {
+            return backgroundDeliveryConfigurationTask
+        }
+
+        var newlyInstalledObservers: [String: HKObserverQuery] = [:]
+        for sampleType in sampleTypes where observersByTypeIdentifier[sampleType.identifier] == nil {
+            let typeIdentifier = sampleType.identifier
+            let kind = Self.metricKind(for: sampleType)
+            let observer = observerQueryFactory.makeObserverQuery(sampleType: sampleType) { [weak self] query, completion, error in
+                Task { @MainActor [weak self] in
+                    guard let self else {
+                        completion()
+                        return
+                    }
+                    await self.handleObserverUpdate(
+                        query: query,
+                        kind: kind,
+                        typeIdentifier: typeIdentifier,
+                        completion: completion,
+                        error: error
+                    )
+                }
+            }
+            observersByTypeIdentifier[typeIdentifier] = observer
+            newlyInstalledObservers[typeIdentifier] = observer
+            store.execute(observer)
+        }
+
+        let newlyInstalledTypeIdentifiers = Set(newlyInstalledObservers.keys)
+        let sampleTypesToEnable = sampleTypes.filter {
+            !backgroundDeliveryEnabledTypeIdentifiers.contains($0.identifier)
+                || newlyInstalledTypeIdentifiers.contains($0.identifier)
+        }
+        let configurationTask = Task { @MainActor [weak self] () throws -> Void in
+            guard let self else { return }
+            defer { self.backgroundDeliveryConfigurationTask = nil }
+
+            do {
+                for sampleType in sampleTypesToEnable {
+                    try Task.checkCancellation()
+                    try await self.store.enableBackgroundDelivery(for: sampleType, frequency: .immediate)
+                    if self.observersByTypeIdentifier[sampleType.identifier] != nil {
+                        self.backgroundDeliveryEnabledTypeIdentifiers.insert(sampleType.identifier)
+                    }
+                }
+            } catch {
+                for (typeIdentifier, observer) in newlyInstalledObservers
+                where self.observersByTypeIdentifier[typeIdentifier] === observer {
+                    self.store.stop(observer)
+                    self.observersByTypeIdentifier.removeValue(forKey: typeIdentifier)
+                    self.backgroundDeliveryEnabledTypeIdentifiers.remove(typeIdentifier)
+                }
+                let failedIdentifier = sampleTypesToEnable.first {
+                    !self.backgroundDeliveryEnabledTypeIdentifiers.contains($0.identifier)
+                }?.identifier
+                throw HealthDataError.backgroundDeliveryConfigurationFailed(
+                    typeIdentifier: failedIdentifier,
+                    message: error.localizedDescription
+                )
             }
         }
-        sleepObserver = observer
-        store.execute(observer)
-        try? await store.enableBackgroundDelivery(for: sleep, frequency: .immediate)
+        backgroundDeliveryConfigurationTask = configurationTask
+        return configurationTask
+    }
+
+    @MainActor
+    private func handleObserverUpdate(
+        query: HKObserverQuery,
+        kind: MetricKind?,
+        typeIdentifier: String,
+        completion: @escaping HKObserverQueryCompletionHandler,
+        error: (any Error)?
+    ) async {
+        let event: HealthBackgroundEvent
+        if let error {
+            if observersByTypeIdentifier[typeIdentifier] === query {
+                store.stop(query)
+                observersByTypeIdentifier.removeValue(forKey: typeIdentifier)
+            }
+            backgroundDeliveryEnabledTypeIdentifiers.remove(typeIdentifier)
+            event = .observerFailed(
+                kind: kind,
+                typeIdentifier: typeIdentifier,
+                message: error.localizedDescription
+            )
+        } else {
+            event = .dataChanged(kind: kind, typeIdentifier: typeIdentifier)
+        }
+
+        await backgroundUpdateHandler?(event)
+        // Apple requires every background delivery to be acknowledged promptly;
+        // withholding this callback three times can disable future delivery. The
+        // app retains query failures and refreshes the rolling window again on
+        // foreground, so a failed read remains recoverable without starving the
+        // observer pipeline.
+        completion()
+    }
+
+    static func workoutMetadata(sessionID: UUID, syncVersion: Int) -> [String: Any] {
+        [
+            HKMetadataKeyIndoorWorkout: true,
+            HKMetadataKeySyncIdentifier: sessionID.uuidString,
+            HKMetadataKeySyncVersion: NSNumber(value: syncVersion)
+        ]
     }
 
     static func diagnostics(from samples: [MetricSample]) -> [SourceDiagnostic] {
@@ -159,7 +385,7 @@ final class HealthKitService: HealthDataProviding {
     }
 
     private static func query(
-        store: HKHealthStore,
+        store: any HealthStoreProviding,
         type: HKSampleType,
         predicate: NSPredicate,
         limit: Int
@@ -302,6 +528,9 @@ final class HealthKitService: HealthDataProviding {
 enum HealthDataError: LocalizedError {
     case unavailable
     case queryFailed([HealthQueryFailure])
+    case invalidWorkoutInterval
+    case invalidWorkoutSyncVersion
+    case backgroundDeliveryConfigurationFailed(typeIdentifier: String?, message: String)
 
     var errorDescription: String? {
         switch self {
@@ -315,6 +544,19 @@ enum HealthDataError: LocalizedError {
                 }
                 .joined(separator: "; ")
             return "Apple Health data could not be refreshed. \(detail.isEmpty ? "No requested category could be read." : detail)"
+        case .invalidWorkoutInterval:
+            return "The workout end time must be later than its start time."
+        case .invalidWorkoutSyncVersion:
+            return "The Apple Health workout sync version is invalid."
+        case .backgroundDeliveryConfigurationFailed(let typeIdentifier, _):
+            let typeLabel = switch typeIdentifier {
+            case .some(HKCategoryTypeIdentifier.sleepAnalysis.rawValue): "sleep"
+            case .some(HKQuantityTypeIdentifier.heartRateVariabilitySDNN.rawValue): "heart rate variability"
+            case .some(HKQuantityTypeIdentifier.restingHeartRate.rawValue): "resting heart rate"
+            case .some(_): "one requested data type"
+            case nil: "all requested data types"
+            }
+            return "Apple Health background updates couldn’t be enabled for \(typeLabel). Your current data is still available; use Refresh Apple Health to try again."
         }
     }
 }

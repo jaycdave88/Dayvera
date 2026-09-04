@@ -51,13 +51,19 @@ explainable workout recommendation and morning schedule.
 `Eight Sleep / Hume / Apple Watch → Apple Health → Sleep Coach`
 
 - **Read:** sleep, HRV, and resting heart rate, with the contributing source kept visible.
-- **Decide:** explain today's readiness, workout volume, effort, and progression.
+- **Decide:** explain today's readiness, workout volume, effort, and whether recovery supports a manual load increase.
 - **Plan:** suggest bedtime, wake time, and gym time from the next hard Calendar commitment.
-- **Train:** build templates from an illustrated exercise catalog, log sets, and review progress.
+- **Train:** build templates from an illustrated exercise catalog, log sets, review progress, and retry Apple Health exports.
 
 Sleep Coach reads what compatible apps write to Apple Health; it does not call
 private Eight Sleep or Hume APIs. Alarms and Calendar events change only after
 confirmation.
+
+Sleep Coach currently applies today’s recovery result to a workout template you
+choose: it can adjust working-set count and cap RPE. Calendar affects the
+suggested sleep, wake, and gym times, while completed workout history is for
+review. The app does not yet generate a weekly program, choose exercises, or
+increase weights from history automatically.
 
 ## 🚀 Run it
 
@@ -76,13 +82,14 @@ For repeatable demo states, tests, and command-line builds, use the
 
 ## 🔒 Data & privacy
 
-- Health, plan, template, and workout data stay in the app's local container.
-- No Sleep Coach account, application server, ads, or analytics SDK.
+- Sleep Coach processes health signals locally and has no app-managed cloud sync.
+- No Sleep Coach account, app-managed server, ads, or analytics SDK.
 - Health and workout data are never attached to exercise-catalog requests.
+- Finished workouts save locally first; Apple Health write access is requested only when you complete a session.
 - Recommendation confidence describes available inputs—not medical certainty or wearable accuracy.
 
 Sleep Coach is wellness software, not medical advice. See the
-[security and privacy notes](SECURITY.md) for the release-hardening checklist.
+[privacy policy](PRIVACY.md) and [security notes](SECURITY.md).
 
 ## 📚 Project guides
 
@@ -93,6 +100,7 @@ Sleep Coach is wellness software, not medical advice. See the
 | [Implementation status](IMPLEMENTATION_STATUS.md) | Verified behavior and remaining device acceptance |
 | [UX flow contract](UX_REDESIGN_HANDOFF.md) | Screen ownership, flows, and acceptance criteria |
 | [Security](SECURITY.md) | Repository hygiene and local-data hardening |
+| [Privacy policy](PRIVACY.md) | What the app reads, stores, writes, and never sends |
 
 Exercise content and illustrations are fetched at runtime from
 [RepDB](https://repdb.co) under its

@@ -1,7 +1,9 @@
 import SwiftUI
+import UIKit
 
 struct NightPlanView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.openURL) private var openURL
     @EnvironmentObject private var appModel: AppModel
     @State private var pendingApplication: PlanApplicationRequest?
     @State private var showingPlanDetails = false
@@ -12,7 +14,14 @@ struct NightPlanView: View {
         ScrollView {
             LazyVStack(spacing: 18) {
                 planSentenceCard
-                if !appModel.plan.warnings.isEmpty { warningCard }
+                if let failure = appModel.calendarReadFailure {
+                    calendarFallbackCard(failure)
+                }
+                if let message = appModel.appliedPlanVerificationMessage,
+                   appModel.appliedPlanStatus == nil {
+                    appliedPlanVerificationCard(message)
+                }
+                if !visiblePlanWarnings.isEmpty { warningCard }
                 planActions
                 if let status = appModel.appliedPlanStatus { appliedPlanCard(status) }
                 planDetailsCard
@@ -60,7 +69,7 @@ struct NightPlanView: View {
     }
 
     private var planSentenceCard: some View {
-        CoachCard {
+        return CoachCard {
             VStack(alignment: .leading, spacing: 8) {
                 Label("Schedule-based wake target", systemImage: "calendar.badge.clock")
                     .font(.caption.weight(.semibold))
@@ -93,7 +102,15 @@ struct NightPlanView: View {
                 applyPlanButton
             }
 
-            if appModel.calendarStatus != "Connected" {
+            if appModel.calendarStatus == "Denied" {
+                Button("Open Settings for Calendar", systemImage: "gear") {
+                    if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
+                        openURL(settingsURL)
+                    }
+                }
+                .buttonStyle(.bordered)
+                .frame(minHeight: 44)
+            } else if appModel.calendarStatus != "Connected" {
                 Button("Connect Calendar for the gym event", systemImage: "calendar.badge.plus") {
                     Task { await appModel.connectCalendar() }
                 }
@@ -148,7 +165,11 @@ struct NightPlanView: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
             .tint(Color.coachIndigo)
-            .disabled(appModel.isApplying || appModel.plan.wakeTime <= .now)
+            .disabled(
+                appModel.isApplying
+                    || appModel.plan.wakeTime <= .now
+                    || (appModel.appliedPlanStatus != nil && appModel.appliedPlanVerificationMessage != nil)
+            )
             .accessibilityLabel(
                 appModel.calendarStatus == "Connected" ? "Apply alarm and gym event" : "Apply wake alarm"
             )
@@ -157,13 +178,16 @@ struct NightPlanView: View {
 
     private var isCurrentPlanApplied: Bool {
         guard let status = appModel.appliedPlanStatus,
+              appModel.appliedPlanVerificationMessage == nil,
               status.wakeAlarmApplied,
               status.wakeTime == appModel.plan.wakeTime,
               status.gymStart == appModel.plan.gymStart,
               status.gymEnd == appModel.plan.gymEnd else {
             return false
         }
-        return appModel.calendarStatus != "Connected" || status.calendarEventApplied
+        let expectsCalendarEvent = status.expectsCalendarEvent
+            || appModel.calendarStatus == "Connected"
+        return !expectsCalendarEvent || status.calendarEventApplied
     }
 
     private var accessibilityScheduleSummary: some View {
@@ -184,26 +208,104 @@ struct NightPlanView: View {
     }
 
     private func appliedPlanCard(_ status: AppliedPlanStatus) -> some View {
-        CoachCard {
+        let needsReview = appModel.appliedPlanVerificationMessage != nil
+        let expectsCalendarEvent = status.expectsCalendarEvent
+            || appModel.calendarStatus == "Connected"
+        let isComplete = status.wakeAlarmApplied
+            && (!expectsCalendarEvent || status.calendarEventApplied)
+        let headline = needsReview
+            ? "Plan needs review"
+            : (isComplete ? "Scheduled items" : "Partially applied")
+        let statusTint = !needsReview && isComplete ? Color.coachMint : Color.coachAmber
+        return CoachCard {
             VStack(alignment: .leading, spacing: 12) {
-                Label("Plan applied", systemImage: "checkmark.circle.fill")
-                    .font(.headline)
-                    .foregroundStyle(Color.coachMint)
-                VStack(alignment: .leading, spacing: 4) {
-                    if status.wakeAlarmApplied {
-                        Text("Wake alarm · \(status.wakeTime.shortTime)")
-                    }
-                    if status.calendarEventApplied {
-                        Text("Gym event · \(status.gymStart.shortTime)–\(status.gymEnd.shortTime)")
+                Label {
+                    Text(headline)
+                } icon: {
+                    Image(
+                        systemName: !needsReview && isComplete
+                            ? "checkmark.circle.fill"
+                            : "exclamationmark.triangle.fill"
+                    )
+                    .foregroundStyle(statusTint)
+                }
+                .font(.headline)
+                .foregroundStyle(.primary)
+                if let message = appModel.appliedPlanVerificationMessage {
+                    Text(message)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    appliedItemRow(
+                        title: "Wake alarm",
+                        scheduledDetail: status.wakeTime.shortTime,
+                        isApplied: status.wakeAlarmApplied,
+                        needsReview: reviewNeeded(for: .wakeAlarm),
+                        reviewDestination: "Clock"
+                    )
+                    if expectsCalendarEvent || status.calendarEventApplied {
+                        appliedItemRow(
+                            title: "Gym event",
+                            scheduledDetail: "\(status.gymStart.shortTime)–\(status.gymEnd.shortTime)",
+                            isApplied: status.calendarEventApplied,
+                            needsReview: reviewNeeded(for: .gymEvent),
+                            reviewDestination: "Calendar"
+                        )
                     }
                 }
                 .font(.subheadline)
-                Button("Undo applied plan", role: .destructive) {
+                Button(role: .destructive) {
                     appModel.undoAppliedPlan()
+                } label: {
+                    Text("Undo applied plan")
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.bordered)
-                .frame(minHeight: 44)
+                .disabled(appModel.isApplying)
             }
+        }
+    }
+
+    private func appliedItemRow(
+        title: String,
+        scheduledDetail: String,
+        isApplied: Bool,
+        needsReview: Bool,
+        reviewDestination: String
+    ) -> some View {
+        Label {
+            Text(
+                isApplied
+                    ? "\(title) · \(needsReview ? "Status unknown—check \(reviewDestination)" : scheduledDetail)"
+                    : "\(title) · Not created"
+            )
+        } icon: {
+            Image(
+                systemName: !isApplied
+                    ? "xmark.circle.fill"
+                    : (needsReview ? "questionmark.circle.fill" : "checkmark.circle.fill")
+            )
+                .foregroundStyle(isApplied && !needsReview ? Color.coachMint : Color.coachAmber)
+        }
+    }
+
+    private enum AppliedItem {
+        case wakeAlarm
+        case gymEvent
+    }
+
+    private func reviewNeeded(for item: AppliedItem) -> Bool {
+        guard let message = appModel.appliedPlanVerificationMessage?.lowercased() else {
+            return false
+        }
+        let mentionsWakeAlarm = message.contains("wake alarm") || message.contains("alarm:")
+        let mentionsGymEvent = message.contains("gym event") || message.contains("calendar:")
+        guard mentionsWakeAlarm || mentionsGymEvent else { return true }
+        switch item {
+        case .wakeAlarm: return mentionsWakeAlarm
+        case .gymEvent: return mentionsGymEvent
         }
     }
 
@@ -369,7 +471,60 @@ struct NightPlanView: View {
                     Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Color.coachAmber)
                 }
                 .font(.headline)
-                ForEach(appModel.plan.warnings, id: \.self) { Text("• \($0)").font(.subheadline) }
+                ForEach(visiblePlanWarnings, id: \.self) { Text("• \($0)").font(.subheadline) }
+            }
+        }
+    }
+
+    private var visiblePlanWarnings: [String] {
+        if appModel.calendarReadFailure != nil {
+            return appModel.plan.warnings.filter {
+                !$0.hasPrefix("No calendar commitment was found")
+            }
+        }
+        if appModel.calendarStatus != "Connected" {
+            return appModel.plan.warnings.map { warning in
+                warning.hasPrefix("No calendar commitment was found")
+                    ? "Calendar is optional and not connected; the plan uses your \(fallbackCommitmentTime) fallback."
+                    : warning
+            }
+        }
+        return appModel.plan.warnings
+    }
+
+    private func calendarFallbackCard(_ failure: String) -> some View {
+        CoachCard {
+            VStack(alignment: .leading, spacing: 8) {
+                Label {
+                    Text("Calendar fallback active")
+                } icon: {
+                    Image(systemName: "calendar.badge.exclamationmark")
+                        .foregroundStyle(Color.coachAmber)
+                }
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                Text("Calendar couldn’t be refreshed: \(failure)")
+                    .font(.subheadline)
+                Text("This plan uses your \(fallbackCommitmentTime) fallback commitment until Calendar refreshes successfully.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func appliedPlanVerificationCard(_ message: String) -> some View {
+        CoachCard {
+            VStack(alignment: .leading, spacing: 8) {
+                Label {
+                    Text("Applied plan needs review")
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Color.coachAmber)
+                }
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                Text(message)
+                    .font(.subheadline)
             }
         }
     }

@@ -75,6 +75,13 @@ struct ExercisePerformancePoint: Identifiable, Hashable, Sendable {
     var isPersonalBest: Bool
 }
 
+enum WorkoutHealthExportState: String, Codable, CaseIterable, Sendable {
+    case unknown
+    case pending
+    case exported
+    case failed
+}
+
 func exerciseProgressOptions(from sessions: [WorkoutSessionRecord]) -> [ExerciseProgressOption] {
     var namesByKey: [String: String] = [:]
     for session in sessions.sorted(by: { $0.startedAt < $1.startedAt }) {
@@ -189,6 +196,14 @@ final class WorkoutSessionRecord {
     var totalVolume: Double
     var setsData: Data
     var notes: String
+    /// Persisted separately from the enum. Existing records predate sync metadata,
+    /// so migration leaves their status unknown instead of offering a retry that
+    /// could duplicate a legacy Health workout. New records initialize pending.
+    var healthExportStateRaw: String = WorkoutHealthExportState.unknown.rawValue
+    /// HealthKit uses this with the stable session UUID to replace, rather than
+    /// duplicate, a workout when a newer export attempt is saved.
+    var healthExportSyncVersion: Int = 1
+    var healthExportErrorMessage: String?
 
     init(
         id: UUID = UUID(),
@@ -199,7 +214,10 @@ final class WorkoutSessionRecord {
         readiness: ReadinessBand,
         readinessScore: Int,
         sets: [CompletedSet],
-        notes: String = ""
+        notes: String = "",
+        healthExportState: WorkoutHealthExportState = .pending,
+        healthExportSyncVersion: Int = 1,
+        healthExportErrorMessage: String? = nil
     ) {
         self.id = id
         self.templateID = templateID
@@ -211,6 +229,9 @@ final class WorkoutSessionRecord {
         self.totalVolume = sets.filter { !$0.isWarmup }.reduce(0) { $0 + $1.volume }
         self.setsData = (try? JSONEncoder().encode(sets)) ?? Data()
         self.notes = notes
+        self.healthExportStateRaw = healthExportState.rawValue
+        self.healthExportSyncVersion = max(healthExportSyncVersion, 1)
+        self.healthExportErrorMessage = healthExportErrorMessage
     }
 
     var readiness: ReadinessBand {
@@ -219,6 +240,33 @@ final class WorkoutSessionRecord {
 
     var sets: [CompletedSet] {
         (try? JSONDecoder().decode([CompletedSet].self, from: setsData)) ?? []
+    }
+
+    var healthExportState: WorkoutHealthExportState {
+        get { WorkoutHealthExportState(rawValue: healthExportStateRaw) ?? .unknown }
+        set { healthExportStateRaw = newValue.rawValue }
+    }
+
+    /// Every retry gets a greater version. If an earlier HealthKit save succeeded
+    /// before its local acknowledgement was committed, the new version replaces it.
+    @discardableResult
+    func prepareHealthExportRetry() -> Bool {
+        guard healthExportState == .pending || healthExportState == .failed,
+              healthExportSyncVersion < Int.max else { return false }
+        healthExportSyncVersion = max(healthExportSyncVersion + 1, 1)
+        healthExportState = .pending
+        healthExportErrorMessage = nil
+        return true
+    }
+
+    func markHealthExported() {
+        healthExportState = .exported
+        healthExportErrorMessage = nil
+    }
+
+    func markHealthExportFailed(message: String) {
+        healthExportState = .failed
+        healthExportErrorMessage = message
     }
 
     var durationMinutes: Double {

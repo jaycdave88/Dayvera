@@ -1,7 +1,117 @@
+import HealthKit
 import XCTest
 @testable import SleepCoach
 
 final class WorkoutModelsTests: XCTestCase {
+    func testWorkoutHealthExportStartsPendingAndFailedRetryIncrementsVersion() {
+        let session = WorkoutSessionRecord(
+            templateID: nil,
+            templateName: "Lower",
+            startedAt: Date(timeIntervalSince1970: 100),
+            endedAt: Date(timeIntervalSince1970: 200),
+            readiness: .moderate,
+            readinessScore: 60,
+            sets: []
+        )
+
+        XCTAssertEqual(session.healthExportState, .pending)
+        XCTAssertEqual(session.healthExportSyncVersion, 1)
+
+        session.markHealthExportFailed(message: "Denied")
+        session.prepareHealthExportRetry()
+
+        XCTAssertEqual(session.healthExportState, .pending)
+        XCTAssertEqual(session.healthExportSyncVersion, 2)
+        XCTAssertNil(session.healthExportErrorMessage)
+    }
+
+    func testPendingHealthExportRetryAdvancesItsVersion() {
+        let session = WorkoutSessionRecord(
+            templateID: nil,
+            templateName: "Lower",
+            startedAt: Date(timeIntervalSince1970: 100),
+            endedAt: Date(timeIntervalSince1970: 200),
+            readiness: .moderate,
+            readinessScore: 60,
+            sets: [],
+            healthExportSyncVersion: 4
+        )
+
+        session.prepareHealthExportRetry()
+
+        XCTAssertEqual(session.healthExportState, .pending)
+        XCTAssertEqual(session.healthExportSyncVersion, 5)
+    }
+
+    func testUnknownLegacyHealthExportCannotBeRetried() {
+        let session = WorkoutSessionRecord(
+            templateID: nil,
+            templateName: "Legacy",
+            startedAt: Date(timeIntervalSince1970: 100),
+            endedAt: Date(timeIntervalSince1970: 200),
+            readiness: .moderate,
+            readinessScore: 60,
+            sets: [],
+            healthExportState: .unknown
+        )
+
+        XCTAssertFalse(session.prepareHealthExportRetry())
+        XCTAssertEqual(session.healthExportState, .unknown)
+        XCTAssertEqual(session.healthExportSyncVersion, 1)
+    }
+
+    func testHealthKitWorkoutMetadataUsesSessionIdentityAndSyncVersion() throws {
+        let id = UUID(uuidString: "00000000-0000-0000-0000-000000000043")!
+
+        let metadata = HealthKitService.workoutMetadata(sessionID: id, syncVersion: 9)
+
+        XCTAssertEqual(metadata[HKMetadataKeySyncIdentifier] as? String, id.uuidString)
+        XCTAssertEqual((metadata[HKMetadataKeySyncVersion] as? NSNumber)?.intValue, 9)
+        XCTAssertEqual(metadata[HKMetadataKeyIndoorWorkout] as? Bool, true)
+    }
+
+    func testBackgroundDeliveryCoversEveryReadMetricType() {
+        XCTAssertEqual(
+            HealthKitService.readMetricTypeIdentifiers,
+            [
+                HKCategoryTypeIdentifier.sleepAnalysis.rawValue,
+                HKQuantityTypeIdentifier.heartRateVariabilitySDNN.rawValue,
+                HKQuantityTypeIdentifier.restingHeartRate.rawValue
+            ]
+        )
+    }
+
+    func testRecentWorkoutDraftKeepsItsOriginalStart() {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let savedStart = now.addingTimeInterval(-90 * 60)
+
+        XCTAssertEqual(normalizedWorkoutStart(savedStart: savedStart, now: now), savedStart)
+    }
+
+    func testStaleWorkoutDraftRestartsToAvoidMultiDaySession() {
+        let now = Date(timeIntervalSince1970: 100_000)
+        let savedStart = now.addingTimeInterval(-7 * 60 * 60)
+
+        XCTAssertEqual(normalizedWorkoutStart(savedStart: savedStart, now: now), now)
+    }
+
+    func testFutureDatedWorkoutDraftRestarts() {
+        let now = Date(timeIntervalSince1970: 100_000)
+        let savedStart = now.addingTimeInterval(60)
+
+        XCTAssertEqual(normalizedWorkoutStart(savedStart: savedStart, now: now), now)
+    }
+
+    func testStaleWorkoutFinishAlwaysProducesAValidNonzeroInterval() {
+        let end = Date(timeIntervalSince1970: 100_000)
+        let staleStart = end.addingTimeInterval(-(7 * 60 * 60))
+
+        let result = validWorkoutIntervalStart(savedStart: staleStart, end: end)
+
+        XCTAssertEqual(result, end.addingTimeInterval(-60))
+        XCTAssertLessThan(result, end)
+    }
+
     func testAdaptedSetCountsMatchWholeTemplateTarget() {
         let exercises = (0..<3).map { index in
             WorkoutExercise(

@@ -13,6 +13,11 @@ if git ls-files | grep -E "$forbidden_paths"; then
     failed=1
 fi
 
+if git rev-list --objects --all | sed -E 's/^[^ ]+ //' | grep -E "$forbidden_paths"; then
+    echo "Repository hygiene failed: a forbidden artifact remains reachable in Git history." >&2
+    failed=1
+fi
+
 if git grep -l -I -E "$secret_pattern" -- . \
     ':(exclude)SECURITY.md' \
     ':(exclude)Scripts/check_repository_hygiene.sh'; then
@@ -26,6 +31,16 @@ if git grep -l -I -E "$local_metadata_pattern" -- . \
     echo "Repository hygiene failed: machine-specific path or signing-team metadata was found." >&2
     failed=1
 fi
+
+while IFS= read -r commit; do
+    if git grep -l -I -E "$secret_pattern|$local_metadata_pattern" "$commit" -- . \
+        ':(exclude)SECURITY.md' \
+        ':(exclude)Scripts/check_repository_hygiene.sh'; then
+        echo "Repository hygiene failed: sensitive content was found in reachable Git history." >&2
+        failed=1
+        break
+    fi
+done < <(git rev-list --all)
 
 if git rev-list --objects --all | grep -E ' \.zvec-grep/' >/dev/null; then
     echo "Repository hygiene failed: zvec-grep artifacts remain reachable in Git history." >&2

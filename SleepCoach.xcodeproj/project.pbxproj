@@ -33,6 +33,7 @@
 		B00000000000000000000024 /* ExerciseCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000028 /* ExerciseCatalogTests.swift */; };
 		B00000000000000000000025 /* ExerciseLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000029 /* ExerciseLibraryView.swift */; };
 		B00000000000000000000026 /* DataSourcesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000030 /* DataSourcesView.swift */; };
+		B00000000000000000000027 /* HealthKitServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000031 /* HealthKitServiceTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -76,6 +77,7 @@
 		F00000000000000000000028 /* ExerciseCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseCatalogTests.swift; sourceTree = "<group>"; };
 		F00000000000000000000029 /* ExerciseLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseLibraryView.swift; sourceTree = "<group>"; };
 		F00000000000000000000030 /* DataSourcesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataSourcesView.swift; sourceTree = "<group>"; };
+		F00000000000000000000031 /* HealthKitServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitServiceTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -183,6 +185,7 @@
 				F00000000000000000000020 /* WorkoutModelsTests.swift */,
 				F00000000000000000000025 /* AppModelLifecycleTests.swift */,
 				F00000000000000000000028 /* ExerciseCatalogTests.swift */,
+				F00000000000000000000031 /* HealthKitServiceTests.swift */,
 			);
 			path = SleepCoachTests;
 			sourceTree = "<group>";
@@ -332,6 +335,7 @@
 				B00000000000000000000019 /* WorkoutModelsTests.swift in Sources */,
 				B00000000000000000000021 /* AppModelLifecycleTests.swift in Sources */,
 				B00000000000000000000024 /* ExerciseCatalogTests.swift in Sources */,
+				B00000000000000000000027 /* HealthKitServiceTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

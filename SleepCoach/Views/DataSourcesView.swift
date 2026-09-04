@@ -212,7 +212,10 @@ struct DataSourcesView: View {
     }
 
     private var healthStateSymbol: String {
-        switch appModel.healthConnectionState {
+        if appModel.healthBackgroundDeliveryFailure != nil {
+            return "exclamationmark.triangle.fill"
+        }
+        return switch appModel.healthConnectionState {
         case .dataReceived(_), .demoData:
             "checkmark.circle.fill"
         case .partialData(_, _), .noReadableSamples, .refreshFailed:
@@ -225,7 +228,10 @@ struct DataSourcesView: View {
     }
 
     private var healthStateColor: Color {
-        switch appModel.healthConnectionState {
+        if appModel.healthBackgroundDeliveryFailure != nil {
+            return .primary
+        }
+        return switch appModel.healthConnectionState {
         case .dataReceived(_), .demoData:
             .coachMint
         case .partialData(_, _), .noReadableSamples, .refreshFailed:
@@ -359,9 +365,19 @@ private struct SignalSourceSettingsView: View {
             DataValueRow(label: "Used now", value: trend.sourceName ?? "No readable source")
             DataValueRow(label: "Selection", value: sourceHealthLabel)
             if let failure = queryFailure {
-                Label("Query failed: \(failure.message)", systemImage: "exclamationmark.triangle.fill")
+                Label("Apple Health query unavailable", systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
-                    .foregroundStyle(Color.coachAmber)
+                    .foregroundStyle(.primary)
+                Text("Refresh after checking this signal’s Apple Health access.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                DisclosureGroup("Technical details") {
+                    Text(failure.message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+                .font(.caption)
             } else {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: sourceHealthSymbol)

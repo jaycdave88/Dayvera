@@ -2,7 +2,9 @@ import SwiftUI
 
 extension Color {
     static let coachInk = Color(red: 0.08, green: 0.10, blue: 0.16)
-    static let coachIndigo = Color(red: 0.31, green: 0.29, blue: 0.82)
+    // Apple's semantic indigo adapts its luminance for light, dark, and
+    // Increase Contrast appearances while preserving the product accent.
+    static let coachIndigo = Color(uiColor: .systemIndigo)
     static let coachMint = Color(red: 0.22, green: 0.72, blue: 0.58)
     static let coachAmber = Color(red: 0.96, green: 0.65, blue: 0.24)
     static let coachRose = Color(red: 0.91, green: 0.34, blue: 0.42)

@@ -496,8 +496,8 @@ struct WorkoutAdjustment: Hashable, Sendable {
 
     var progressionPrescription: String {
         allowProgression
-            ? "Allowed after clean target reps"
-            : "No load progression today"
+            ? "Manual · recovery supports an increase"
+            : "Keep planned loads today"
     }
 }
 

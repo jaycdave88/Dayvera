@@ -28,6 +28,7 @@ private enum AppTab: String, Hashable {
             return .train
         }
         #endif
+        #if DEBUG
         let prefix = "--tab="
         guard let argument = arguments.first(where: { $0.hasPrefix(prefix) }) else {
             return .today
@@ -39,6 +40,9 @@ private enum AppTab: String, Hashable {
         default:
             return AppTab(rawValue: requested) ?? .today
         }
+        #else
+        return .today
+        #endif
     }
 }
 
@@ -115,9 +119,14 @@ struct RootView: View {
     private var onboardingPresentation: Binding<Bool> {
         Binding(
             get: {
-                !hasCompletedGuidedSetup
+                #if DEBUG
+                let skipsOnboarding = ProcessInfo.processInfo.arguments.contains("--skip-onboarding")
+                #else
+                let skipsOnboarding = false
+                #endif
+                return !hasCompletedGuidedSetup
                     && appModel.healthConnectionState == .notRequested
-                    && !ProcessInfo.processInfo.arguments.contains("--skip-onboarding")
+                    && !skipsOnboarding
             },
             set: { isPresented in
                 if !isPresented { hasCompletedGuidedSetup = true }
@@ -130,6 +139,7 @@ private struct GuidedSetupView: View {
     @EnvironmentObject private var appModel: AppModel
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var isConnecting = false
+    @State private var connectionError: String?
     let onComplete: () -> Void
 
     var body: some View {
@@ -144,7 +154,7 @@ private struct GuidedSetupView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Wake ready. Train with context.")
                             .font(.largeTitle.bold())
-                        Text("Sleep Coach turns your overnight recovery and tomorrow's commitments into one clear wake and training plan.")
+                        Text("Sleep Coach turns your overnight recovery and tomorrow's commitments into a clear wake schedule and readiness adjustment for the workout you choose.")
                             .font(.title3)
                             .foregroundStyle(.secondary)
                     }
@@ -165,8 +175,8 @@ private struct GuidedSetupView: View {
                             Divider()
                             setupBenefit(
                                 symbol: "lock.shield.fill",
-                                title: "Private by default",
-                                detail: "Your health and workout records stay on this device."
+                                title: "Local first",
+                                detail: "Workouts save locally first. Apple Health export is attempted at finish only after you grant write permission."
                             )
                         }
                     }
@@ -195,9 +205,14 @@ private struct GuidedSetupView: View {
                     Button {
                         isConnecting = true
                         Task {
-                            await appModel.connectHealth()
+                            let connected = await appModel.connectHealth()
                             isConnecting = false
-                            onComplete()
+                            if connected {
+                                onComplete()
+                            } else {
+                                connectionError = appModel.notice ?? "Apple Health could not be connected. Please try again."
+                                appModel.notice = nil
+                            }
                         }
                     } label: {
                         Group {
@@ -229,6 +244,14 @@ private struct GuidedSetupView: View {
                 .padding(.top, 12)
                 .background(.bar)
             }
+        }
+        .alert("Couldn’t connect Apple Health", isPresented: Binding(
+            get: { connectionError != nil },
+            set: { if !$0 { connectionError = nil } }
+        )) {
+            Button("OK") { connectionError = nil }
+        } message: {
+            Text(connectionError ?? "")
         }
     }
 

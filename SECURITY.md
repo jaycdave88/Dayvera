@@ -1,6 +1,6 @@
 # Repository security and privacy
 
-Sleep Coach is designed as a local-first iPhone app. It has no account system, analytics SDK, advertising SDK, or application server. Apple Health and workout records are not sent with exercise-catalog requests.
+Sleep Coach is designed as a local-first iPhone app. It has no account system, analytics SDK, advertising SDK, or app-managed server. Apple Health and workout records are not sent with exercise-catalog requests.
 
 ## Never commit
 
@@ -20,14 +20,15 @@ git diff --cached --check
 git ls-files | rg '(\.env|\.p8|\.p12|\.pem|\.mobileprovision|\.xcresult|HealthExport|export\.xml|\.zvec-grep)'
 git rev-list --objects --all | rg ' \.zvec-grep/'
 rg -n --hidden -g '!.git/**' -g '!.zvec-grep/**' '(BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|Bearer [A-Za-z0-9._-]+|AKIA[0-9A-Z]{16})' .
+rg -a -l '/Users/' /path/to/SleepCoach.xcarchive/Products/Applications/SleepCoach.app/SleepCoach
 ```
 
-The two `rg` commands should return no matches. A clean result does not replace provider-side secret scanning or rotation if a real credential is ever committed.
+The repository scans and final archive scan should return no matches. A clean result does not replace provider-side secret scanning or rotation if a real credential is ever committed. Keep the archive and its dSYM outside the repository; the dSYM is expected to retain source information for crash symbolication.
 
-`Scripts/check_repository_hygiene.sh` enforces the same high-confidence checks locally and in GitHub Actions. The workflow uses the official checkout action pinned to the reviewed v7.0.1 commit and checks full reachable history.
+`Scripts/check_repository_hygiene.sh` enforces the same high-confidence checks locally and in GitHub Actions. The workflow uses the official checkout action pinned to the reviewed v7.0.1 commit and scans both the current tree and reachable commit history.
 
-## Local-data hardening before production
+## Local-data protection
 
-Workout history, active drafts, and applied schedule status are sandboxed locally. Before an App Store release, explicitly choose and test the iOS Data Protection class and backup behavior for the SwiftData store, its SQLite sidecars, and draft/status persistence. This is a release-hardening requirement, not evidence of a credential leak.
+Workout history, health-source preferences, Health setup state, active drafts, and applied schedule status are sandboxed locally in backup-excluded Application Support. Core Data uses complete-until-first-authentication protection by default; Sleep Coach also requests that protection explicitly for its private-state JSON so background launches can read app state after the first device unlock following a reboot. The active-workout draft file separately uses complete file protection. Only nonsensitive interface setup flags and opaque app-owned Calendar/Alarm identifiers normally remain in UserDefaults; legacy health-adjacent payloads are removed only after their protected migration succeeds. The app does not configure SwiftData cloud sync. `PrivacyInfo.xcprivacy` is bundled with the app and declares no tracking or developer-collected data plus the required reasons for UserDefaults and file-timestamp access. Signed file protection, backup exclusion, locked-device behavior, privacy declarations, and migration behavior must be reverified on a physical device for each production release.
 
 Report a suspected vulnerability privately to the repository owner. Do not open a public issue containing secrets, personal health data, device identifiers, or reproducible user data.
