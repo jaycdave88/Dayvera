@@ -29,7 +29,7 @@ explainable workout recommendation and morning schedule.
 <p align="center"><strong>Decide → plan → train</strong></p>
 
 <p align="center">
-  <a href="./QA/Screenshots/sleepcoach-ux-today-dark.png"><img src="./QA/Screenshots/sleepcoach-ux-today-dark.png" width="260" alt="Today screen showing a full-performance workout recommendation and readiness score" /></a>
+  <a href="./QA/Screenshots/sleepcoach-ux-today-dark.png"><img src="./QA/Screenshots/sleepcoach-ux-today-dark.png" width="260" alt="Today screen showing a validated workout recommendation, recovery, sleep, and recent training" /></a>
   <a href="./QA/Screenshots/sleepcoach-ux-plan-dark.png"><img src="./QA/Screenshots/sleepcoach-ux-plan-dark.png" width="260" alt="Plan screen showing bedtime, wake time, workout time, and calendar commitment" /></a>
   <a href="./QA/Screenshots/sleepcoach-ux-train-dark.png"><img src="./QA/Screenshots/sleepcoach-ux-train-dark.png" width="260" alt="Train screen showing a readiness-adjusted workout template" /></a>
 </p>
@@ -51,7 +51,7 @@ explainable workout recommendation and morning schedule.
 `Eight Sleep / Hume / Apple Watch → Apple Health → Sleep Coach`
 
 - **Read:** sleep, HRV, and resting heart rate, with the contributing source kept visible.
-- **Decide:** explain today's readiness, workout volume, effort, and whether recovery supports a manual load increase.
+- **Decide:** build three validated daily workout options from recovery, training history, goals, time, equipment, and exclusions.
 - **Plan:** suggest bedtime, wake time, and gym time from the next hard Calendar commitment.
 - **Train:** build templates from an illustrated exercise catalog, log sets, review progress, and retry Apple Health exports.
 
@@ -59,11 +59,13 @@ Sleep Coach reads what compatible apps write to Apple Health; it does not call
 private Eight Sleep or Hume APIs. Alarms and Calendar events change only after
 confirmation.
 
-Sleep Coach currently applies today’s recovery result to a workout template you
-choose: it can adjust working-set count and cap RPE. Calendar affects the
-suggested sleep, wake, and gym times, while completed workout history is for
-review. The app does not yet generate a weekly program, choose exercises, or
-increase weights from history automatically.
+Sleep Coach first reduces the enabled Apple Health signals and local workout
+history into a bounded daily state. A deterministic planner then chooses only
+reviewed catalog exercises, enforces recovery and volume limits, and creates a
+recommended, shorter, and alternate-focus workout. Optional on-device
+personalization may rank those three valid options and improve the explanation;
+it cannot invent exercises or change safety rules. The app does not yet create a
+long-range periodized program or apply suggested weight increases automatically.
 
 ## 🚀 Run it
 

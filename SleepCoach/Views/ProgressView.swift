@@ -9,30 +9,53 @@ enum ProgressSection: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+struct ProgressView: View {
+    @State private var section: ProgressSection
+
+    init(initialSection: ProgressSection = .recovery) {
+        _section = State(initialValue: initialSection)
+    }
+
+    var body: some View {
+        ProgressDetailView(section: section, allowsSectionSelection: true) {
+            Picker("Progress section", selection: $section) {
+                ForEach(ProgressSection.allCases) { item in
+                    Text(item.rawValue).tag(item)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(minHeight: 44)
+        }
+    }
+}
+
 struct RecoveryTrendsView: View {
     var body: some View {
-        ProgressDetailView(section: .recovery)
+        ProgressDetailView(section: .recovery, allowsSectionSelection: false) { EmptyView() }
     }
 }
 
 struct TrainingHistoryView: View {
     var body: some View {
-        ProgressDetailView(section: .training)
+        ProgressDetailView(section: .training, allowsSectionSelection: false) { EmptyView() }
     }
 }
 
-private struct ProgressDetailView: View {
+private struct ProgressDetailView<SectionPicker: View>: View {
     @EnvironmentObject private var appModel: AppModel
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Query(sort: \WorkoutSessionRecord.startedAt, order: .reverse) private var sessions: [WorkoutSessionRecord]
     let section: ProgressSection
+    let allowsSectionSelection: Bool
+    @ViewBuilder let sectionPicker: SectionPicker
     @State private var window: TrendWindow = .sevenDays
     @State private var selectedExerciseKey = ""
 
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 18) {
+                if allowsSectionSelection { sectionPicker }
                 dateRangeControl
                 switch section {
                 case .recovery:
@@ -44,7 +67,7 @@ private struct ProgressDetailView: View {
             .padding()
         }
         .background(Color(uiColor: .systemGroupedBackground))
-        .navigationTitle(section == .recovery ? "Recovery Trends" : "Training History")
+        .navigationTitle(allowsSectionSelection ? "Progress" : (section == .recovery ? "Recovery Trends" : "Training History"))
         .navigationBarTitleDisplayMode(dynamicTypeSize.isAccessibilitySize ? .inline : .large)
         .onAppear(perform: reconcileExerciseSelection)
         .onChange(of: sessions.count) { _, _ in reconcileExerciseSelection() }
@@ -72,12 +95,12 @@ private struct ProgressDetailView: View {
     private var takeawayCard: some View {
         CoachCard {
             VStack(alignment: .leading, spacing: 8) {
-                Label("Recovery takeaway", systemImage: "waveform.path.ecg")
+                Label("Recovery Summary", systemImage: "waveform.path.ecg")
                     .font(.headline)
                     .foregroundStyle(Color.coachIndigo)
                 Text(appModel.snapshot.recoveryTakeaway)
                     .font(.title3.weight(.semibold))
-                Text("The selected source and comparison stay fixed within each signal.")
+                Text("Each trend uses one consistent source.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -117,7 +140,7 @@ private struct ProgressDetailView: View {
                         if let target = signal.referenceValue {
                             RuleMark(y: .value("Sleep target", target))
                                 .lineStyle(StrokeStyle(lineWidth: 2, dash: [5, 4]))
-                                .foregroundStyle(Color.coachAmber)
+                                .foregroundStyle(Color.secondary)
                                 .annotation(position: .top, alignment: .trailing) {
                                     Text("Target \(target.hoursMinutes)")
                                         .font(.caption2.weight(.semibold))
@@ -198,18 +221,9 @@ private struct ProgressDetailView: View {
     }
 
     private var biometricCharts: some View {
-        Group {
-            if dynamicTypeSize.isAccessibilitySize {
-                VStack(spacing: 12) {
-                    BiometricDeviationCard(signal: appModel.snapshot.hrvTrend, window: window)
-                    BiometricDeviationCard(signal: appModel.snapshot.restingHeartRateTrend, window: window)
-                }
-            } else {
-                HStack(alignment: .top, spacing: 12) {
-                    BiometricDeviationCard(signal: appModel.snapshot.hrvTrend, window: window)
-                    BiometricDeviationCard(signal: appModel.snapshot.restingHeartRateTrend, window: window)
-                }
-            }
+        VStack(spacing: 12) {
+            BiometricDeviationCard(signal: appModel.snapshot.hrvTrend, window: window)
+            BiometricDeviationCard(signal: appModel.snapshot.restingHeartRateTrend, window: window)
         }
     }
 
@@ -247,7 +261,7 @@ private struct ProgressDetailView: View {
         return CoachCard {
             VStack(alignment: .leading, spacing: 14) {
                 SectionTitle(
-                    title: "Top-set strength trend",
+                    title: "Estimated Strength Trend",
                     subtitle: "Estimated 1RM from the best working set in each session"
                 )
 
@@ -259,11 +273,13 @@ private struct ProgressDetailView: View {
                 .pickerStyle(.menu)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                if points.isEmpty {
+                if points.count < 3 {
                     EmptyState(
                         symbol: "dumbbell",
-                        title: "No sets in this range",
-                        detail: "Choose 28D or complete another working set for this exercise."
+                        title: points.isEmpty ? "No sets in this range" : "Keep building this trend",
+                        detail: points.isEmpty
+                            ? "Choose a longer range or complete another working set for this exercise."
+                            : "Complete one more session before Sleep Coach draws a meaningful trend line."
                     )
                 } else {
                     Chart(points) { point in
@@ -280,7 +296,7 @@ private struct ProgressDetailView: View {
                         .foregroundStyle(Color.coachIndigo)
                         .symbolSize(point.isPersonalBest ? 80 : 34)
                         .accessibilityLabel(point.date.formatted(date: .abbreviated, time: .omitted))
-                        .accessibilityValue("Estimated one rep max \(formattedWeight(point.estimatedOneRepMax)); top set \(formattedWeight(point.weight)) for \(point.reps) reps at RPE \(formattedRPE(point.rpe))\(point.isPersonalBest ? ", personal best" : "")")
+                        .accessibilityValue("Estimated one rep max \(formattedWeight(point.estimatedOneRepMax)); top set \(formattedWeight(point.weight)) for \(point.reps) reps at RPE \(formattedRPE(point.rpe))\(point.isPersonalBest ? ", estimated best" : "")")
                         if point.isPersonalBest {
                             PointMark(
                                 x: .value("Personal best session", point.date),
@@ -289,7 +305,7 @@ private struct ProgressDetailView: View {
                             .foregroundStyle(Color.coachMint)
                             .symbolSize(90)
                             .annotation(position: .top) {
-                                Label("PB", systemImage: "star.fill")
+                                Label("Estimated Best", systemImage: "star.fill")
                                     .font(.caption2.bold())
                                     .foregroundStyle(Color.primary)
                             }
@@ -306,7 +322,7 @@ private struct ProgressDetailView: View {
                     }
                     .accessibilityElement(children: .contain)
                     .accessibilityLabel("Estimated one-rep max trend for \(selectedExerciseName)")
-                    .accessibilityValue("\(points.count) sessions in the selected \(window.rawValue)-day range. Personal best \(formattedWeight(points.map(\.estimatedOneRepMax).max() ?? 0)).")
+                    .accessibilityValue("\(points.count) sessions in the selected \(window.rawValue)-day range. Estimated best \(formattedWeight(points.map(\.estimatedOneRepMax).max() ?? 0)).")
 
                     Text("Estimate uses Epley: weight × (1 + reps ÷ 30). Compare this trend only within the selected exercise; it is not a tested one-rep max.")
                         .font(.caption2)
@@ -364,7 +380,7 @@ private struct ProgressDetailView: View {
                             if dynamicTypeSize.isAccessibilitySize {
                                 VStack(alignment: .leading, spacing: 10) {
                                     workoutHistoryIdentity(session)
-                                    Text("Readiness \(session.readinessScore)")
+                                    Text(workoutReadinessText(session))
                                         .font(.caption.weight(.semibold))
                                         .padding(.leading, 48)
                                 }
@@ -372,7 +388,7 @@ private struct ProgressDetailView: View {
                                 HStack(alignment: .top, spacing: 12) {
                                     workoutHistoryIdentity(session)
                                     Spacer(minLength: 8)
-                                    Text("Readiness \(session.readinessScore)")
+                                    Text(workoutReadinessText(session))
                                         .font(.caption.weight(.semibold))
                                         .multilineTextAlignment(.trailing)
                                 }
@@ -404,7 +420,7 @@ private struct ProgressDetailView: View {
                 .foregroundStyle(.primary)
                 Spacer(minLength: 8)
                 if isExporting {
-                    ProgressView()
+                    SwiftUI.ProgressView()
                         .controlSize(.small)
                         .accessibilityHidden(true)
                 }
@@ -481,7 +497,7 @@ private struct ProgressDetailView: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
                     Text(point.date.shortDay).font(.subheadline.bold())
-                    if point.isPersonalBest { Text("PB").font(.caption2.bold()) }
+                    if point.isPersonalBest { Text("Estimated Best").font(.caption.bold()) }
                 }
                 Text("\(formattedWeight(point.weight)) × \(point.reps) · RPE \(formattedRPE(point.rpe))")
                     .font(.caption)
@@ -504,11 +520,13 @@ private struct ProgressDetailView: View {
     }
 
     private func workoutHistoryIdentity(_ session: WorkoutSessionRecord) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: session.readiness.symbol)
-                .foregroundStyle(session.readiness.color)
+        let hasReadiness = session.recordedReadinessScore != nil
+        let readinessTint = hasReadiness ? session.readiness.color : Color.secondary
+        return HStack(alignment: .top, spacing: 12) {
+            Image(systemName: hasReadiness ? session.readiness.symbol : "questionmark.circle")
+                .foregroundStyle(readinessTint)
                 .frame(width: 36, height: 36)
-                .background(session.readiness.color.opacity(0.12), in: Circle())
+                .background(readinessTint.opacity(0.12), in: Circle())
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
                 Text(session.templateName).font(.headline)
@@ -517,6 +535,13 @@ private struct ProgressDetailView: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    private func workoutReadinessText(_ session: WorkoutSessionRecord) -> String {
+        guard let score = session.recordedReadinessScore else {
+            return "Readiness not recorded"
+        }
+        return "Readiness \(score)"
     }
 
     private var summaryColumns: [GridItem] {
@@ -537,7 +562,11 @@ private struct ProgressDetailView: View {
     }
 
     private var selectedExercisePoints: [ExercisePerformancePoint] {
-        exercisePerformanceHistory(from: periodSessions, exerciseKey: selectedExerciseKey)
+        exercisePerformanceHistory(
+            from: periodSessions,
+            exerciseKey: selectedExerciseKey,
+            displayedIn: appModel.trainingProfile.loadUnit
+        )
     }
 
     private var selectedExerciseName: String {
@@ -571,7 +600,7 @@ private struct ProgressDetailView: View {
     }
 
     private func formattedWeight(_ value: Double) -> String {
-        "\(value.formatted(.number.precision(.fractionLength(0...1)))) lb"
+        "\(value.formatted(.number.precision(.fractionLength(0...1)))) \(appModel.trainingProfile.loadUnit.symbol)"
     }
 
     private func formattedRPE(_ value: Double) -> String {

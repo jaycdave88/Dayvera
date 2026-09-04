@@ -21,7 +21,7 @@ These captures use deterministic demo data. They do not contain personal Health,
 - [Plan · Accessibility Extra Large](Screenshots/sleepcoach-ux-compact-plan-ax-light.png)
 - [Plan applied feedback · Accessibility Extra Large](Screenshots/sleepcoach-ux-compact-plan-applied-ax-light.png)
 
-At Accessibility sizes, Today’s `Choose workout` and Plan’s `Apply plan` remain pinned above the tab bar while the complete explanation stays scrollable.
+At Accessibility sizes, primary actions remain at least 44 points tall, content reflows vertically, and the complete explanation remains scrollable.
 
 ## Exercise and source-detail coverage
 
@@ -34,4 +34,4 @@ At Accessibility sizes, Today’s `Choose workout` and Plan’s `Apply plan` rem
 - [Data & Sources · compact Accessibility size](Screenshots/sleepcoach-ux-compact-data-sources-ax-light.png)
 - [Today · Increase Contrast](Screenshots/sleepcoach-final-compact-today-increase-contrast.png)
 
-Validated behavior includes stable five-tab ownership, one primary action per decision screen, scrollability, compact-width reflow, inline titles at Accessibility sizes, non-color status labels, source/failure recovery copy, template/active-workout exclusivity, and separated recovery/training trends. The fixtures include Eight Sleep, Hume, and Apple Watch observations so automatic preference and manual-source choices can be reviewed without real HealthKit data.
+Validated behavior includes four-tab ownership (Today, Plan, Train, Progress), one primary action per decision screen, scrollability, compact-width reflow, inline titles at Accessibility sizes, non-color status labels, source/failure recovery copy, protected active-workout drafts, and separated recovery/training trends. Settings and the exercise library are one level below the tabs. The fixtures include Eight Sleep, Hume, and Apple Watch observations so automatic preference and manual-source choices can be reviewed without real HealthKit data.

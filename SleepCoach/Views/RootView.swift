@@ -2,30 +2,32 @@ import SwiftUI
 import SwiftData
 
 private enum AppTab: String, Hashable {
-    case today, plan, train, exercises, settings
+    case today, plan, train, progress
 
     static var launchSelection: AppTab {
         let arguments = ProcessInfo.processInfo.arguments
         #if DEBUG
         if arguments.contains("--show-data-sources")
             || arguments.contains(where: { $0.hasPrefix("--show-signal-source=") }) {
-            return .settings
+            return .today
         }
         if arguments.contains(where: { $0.hasPrefix("--show-exercise=") }) {
-            return .exercises
+            return .train
         }
         if arguments.contains("--show-recovery-progress") {
-            return .today
+            return .progress
         }
         if arguments.contains(where: {
             [
                 "--show-template-editor",
                 "--show-template-library",
-                "--show-active-workout",
-                "--show-progress"
+                "--show-active-workout"
             ].contains($0)
         }) {
             return .train
+        }
+        if arguments.contains("--show-progress") {
+            return .progress
         }
         #endif
         #if DEBUG
@@ -35,8 +37,10 @@ private enum AppTab: String, Hashable {
         }
         let requested = String(argument.dropFirst(prefix.count))
         switch requested {
-        case "workout", "progress":
+        case "workout", "exercises":
             return .train
+        case "settings":
+            return .today
         default:
             return AppTab(rawValue: requested) ?? .today
         }
@@ -46,39 +50,108 @@ private enum AppTab: String, Hashable {
     }
 }
 
+private enum LaunchDestination {
+    static var showsSettings: Bool {
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        return arguments.contains("--show-data-sources")
+            || arguments.contains(where: { $0.hasPrefix("--show-signal-source=") })
+            || arguments.contains("--tab=settings")
+        #else
+        return false
+        #endif
+    }
+
+    static var showsDataSources: Bool {
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        return arguments.contains("--show-data-sources")
+            || arguments.contains(where: { $0.hasPrefix("--show-signal-source=") })
+        #else
+        return false
+        #endif
+    }
+
+    static var showsExerciseLibrary: Bool {
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        return arguments.contains("--tab=exercises")
+            || arguments.contains(where: { $0.hasPrefix("--show-exercise=") })
+        #else
+        return false
+        #endif
+    }
+
+    static var progressSection: ProgressSection {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--show-progress") {
+            return .training
+        }
+        #endif
+        return .recovery
+    }
+}
+
 struct RootView: View {
     @EnvironmentObject private var appModel: AppModel
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("hasCompletedGuidedSetup") private var hasCompletedGuidedSetup = false
     @State private var selection = AppTab.launchSelection
+    @State private var showingSettings = LaunchDestination.showsSettings
     @State private var showingDataSources = false
+    @State private var pendingDataSources = LaunchDestination.showsDataSources
+    @State private var showingExerciseLibrary = LaunchDestination.showsExerciseLibrary
+    private let initialProgressSection = LaunchDestination.progressSection
 
     var body: some View {
         TabView(selection: $selection) {
             NavigationStack {
                 DashboardView(
                     onOpenTrain: { selection = .train },
+                    onOpenPlan: { selection = .plan },
                     onOpenDataSources: {
-                        selection = .settings
-                        showingDataSources = true
+                        selection = .today
+                        pendingDataSources = true
+                        showingSettings = true
                     }
                 )
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            showingSettings = true
+                        } label: {
+                            Label("Settings", systemImage: "gearshape")
+                        }
+                        .accessibilityHint("Manage health data, integrations, and privacy")
+                    }
+                }
+                .navigationDestination(isPresented: $showingSettings) {
+                    SettingsView(showingDataSources: $showingDataSources)
+                        .task {
+                            guard pendingDataSources else { return }
+                            pendingDataSources = false
+                            await Task.yield()
+                            showingDataSources = true
+                        }
+                }
             }
                 .tabItem { Label("Today", systemImage: "sun.max.fill") }
                 .tag(AppTab.today)
             NavigationStack { NightPlanView() }
                 .tabItem { Label("Plan", systemImage: "calendar.badge.clock") }
                 .tag(AppTab.plan)
-            NavigationStack { WorkoutsView() }
+            NavigationStack {
+                WorkoutsView()
+                    .navigationDestination(isPresented: $showingExerciseLibrary) {
+                        ExerciseLibraryView()
+                    }
+            }
                 .tabItem { Label("Train", systemImage: "figure.strengthtraining.traditional") }
                 .tag(AppTab.train)
-            NavigationStack { ExerciseLibraryView() }
-                .tabItem { Label("Exercises", systemImage: "dumbbell.fill") }
-                .tag(AppTab.exercises)
-            NavigationStack { SettingsView(showingDataSources: $showingDataSources) }
-                .tabItem { Label("Settings", systemImage: "gearshape.fill") }
-                .tag(AppTab.settings)
+            NavigationStack { ProgressView(initialSection: initialProgressSection) }
+                .tabItem { Label("Progress", systemImage: "chart.xyaxis.line") }
+                .tag(AppTab.progress)
         }
         .tint(Color.coachIndigo)
         .fullScreenCover(isPresented: onboardingPresentation) {
@@ -154,7 +227,7 @@ private struct GuidedSetupView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Wake ready. Train with context.")
                             .font(.largeTitle.bold())
-                        Text("Sleep Coach turns your overnight recovery and tomorrow's commitments into a clear wake schedule and readiness adjustment for the workout you choose.")
+                        Text("Sleep Coach turns overnight recovery, training history, and tomorrow’s commitments into a clear morning plan and workout guidance.")
                             .font(.title3)
                             .foregroundStyle(.secondary)
                     }
@@ -163,20 +236,20 @@ private struct GuidedSetupView: View {
                         VStack(alignment: .leading, spacing: 16) {
                             setupBenefit(
                                 symbol: "heart.text.square.fill",
-                                title: "Connect through Apple Health",
-                                detail: "Read sleep, HRV, and resting heart rate shared by sources such as Eight Sleep and Hume."
+                                title: "Use Apple Health Data",
+                                detail: "Use sleep, HRV, and resting heart rate shared by sources like Eight Sleep and Hume."
                             )
                             Divider()
                             setupBenefit(
                                 symbol: "calendar.badge.clock",
-                                title: "Plan only when you ask",
-                                detail: "Calendar and wake-alarm access are requested later from Plan, when you apply a schedule."
+                                title: "You Control Calendar and Alarms",
+                                detail: "Sleep Coach asks for access only when you schedule a morning from Plan."
                             )
                             Divider()
                             setupBenefit(
                                 symbol: "lock.shield.fill",
-                                title: "Local first",
-                                detail: "Workouts save locally first. Apple Health export is attempted at finish only after you grant write permission."
+                                title: "Private by Design",
+                                detail: "Workouts stay on this device. Export to Apple Health happens only after you grant access."
                             )
                         }
                     }
@@ -188,8 +261,8 @@ private struct GuidedSetupView: View {
                             Slider(value: $appModel.preferences.sleepNeedMinutes, in: 420...600, step: 15)
                                 .accessibilityLabel("Sleep target")
                                 .accessibilityValue(appModel.preferences.sleepNeedMinutes.hoursMinutes)
-                            Text("You can fine-tune this later in Plan.")
-                                .font(.caption)
+                            Text("You can change this later in Plan.")
+                                .font(.footnote)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -218,7 +291,7 @@ private struct GuidedSetupView: View {
                         Group {
                             if isConnecting {
                                 HStack {
-                                    ProgressView()
+                                    SwiftUI.ProgressView()
                                     Text("Connecting…")
                                 }
                             } else {
@@ -232,7 +305,7 @@ private struct GuidedSetupView: View {
                     .tint(Color.coachIndigo)
                     .disabled(isConnecting)
 
-                    Button("Continue without health data") {
+                    Button("Set Up Later") {
                         onComplete()
                     }
                     .buttonStyle(.plain)

@@ -19,8 +19,8 @@ struct DataSourcesView: View {
             observedSources
             confidenceExplanation
         }
-        .navigationTitle("Data & Sources")
-        .navigationBarTitleDisplayMode(dynamicTypeSize.isAccessibilitySize ? .inline : .large)
+        .navigationTitle("Health Data & Sources")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 EditButton()
@@ -40,6 +40,7 @@ struct DataSourcesView: View {
             handledDebugRoute = true
             let rawValue = String(argument.dropFirst("--show-signal-source=".count))
             debugSignal = MetricKind(rawValue: rawValue)
+            await Task.yield()
             showingDebugSignal = debugSignal != nil
             #endif
         }
@@ -65,15 +66,15 @@ struct DataSourcesView: View {
             .accessibilityElement(children: .combine)
 
             DataValueRow(
-                label: "Recommendation confidence",
+                label: "Guidance confidence",
                 value: appModel.snapshot.readinessAvailable
                     ? appModel.snapshot.confidence.title
                     : "Unavailable"
             )
-            DataValueRow(label: "Current selected inputs", value: selectedInputSummary)
+            DataValueRow(label: "Signals up to date", value: selectedInputSummary)
 
             if usedSignalCount == 0 {
-                Label("Choose at least one signal to create a workout recommendation.", systemImage: "exclamationmark.triangle.fill")
+                Label("Choose at least one signal to add recovery context to workout recommendations.", systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
                     .foregroundStyle(Color.coachAmber)
             }
@@ -101,11 +102,11 @@ struct DataSourcesView: View {
             } label: {
                 if appModel.isRefreshing {
                     HStack {
-                        ProgressView()
+                        SwiftUI.ProgressView()
                         Text("Refreshing…")
                     }
                 } else {
-                    Label("Refresh Apple Health", systemImage: "arrow.clockwise")
+                    Label("Check for New Data", systemImage: "arrow.clockwise")
                 }
             }
             .disabled(appModel.isRefreshing)
@@ -127,7 +128,7 @@ struct DataSourcesView: View {
             }
             .onMove(perform: moveSignals)
         } header: {
-            Text("Signals")
+            Text("Recovery Signals")
         } footer: {
             Text("Tap a signal to choose what appears on Today, whether it influences the workout recommendation, and which observed source to use. Tap Edit to reorder Today.")
         }
@@ -137,7 +138,7 @@ struct DataSourcesView: View {
         Section("Health data needs attention") {
             ForEach(appModel.healthQueryFailures) { failure in
                 VStack(alignment: .leading, spacing: 4) {
-                    Label(failure.kind?.title ?? "Apple Health query", systemImage: "exclamationmark.triangle.fill")
+                    Label("Couldn’t update \(failure.kind?.title ?? "Apple Health data")", systemImage: "exclamationmark.triangle.fill")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(Color.coachAmber)
                     Text("This signal could not be updated. Refresh, then review its sharing permission in Apple Health if the problem continues.")
@@ -174,13 +175,13 @@ struct DataSourcesView: View {
         } header: {
             Text("Sources found in Apple Health")
         } footer: {
-            Text("Overlapping sources are never averaged. “Used now” means that source currently supplies the displayed trend and any enabled recommendation input.")
+            Text("Overlapping sources are never averaged. “Using” identifies the source that supplies the displayed trend and any enabled workout guidance.")
         }
     }
 
     private var confidenceExplanation: some View {
         Section("What the labels mean") {
-            Label("Source status", systemImage: "point.3.connected.trianglepath.dotted")
+            Label("Current Source", systemImage: "point.3.connected.trianglepath.dotted")
             Text("Whether the selected source is available, fresh, or using your permitted fallback.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -190,7 +191,7 @@ struct DataSourcesView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            Label("Recommendation confidence", systemImage: "checkmark.seal")
+            Label("Guidance Confidence", systemImage: "checkmark.seal")
             Text("How complete the enabled inputs and their history are. It is not a clinical rating or a claim about wearable accuracy.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -208,7 +209,7 @@ struct DataSourcesView: View {
             let signal = trend(for: preference.metric)
             return signal.currentValue != nil && signal.freshness != .stale
         }.count
-        return "\(current) of \(enabled.count) current"
+        return "\(current) of \(enabled.count) up to date"
     }
 
     private var healthStateSymbol: String {
@@ -287,8 +288,8 @@ private struct SignalControlRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             VStack(alignment: .leading, spacing: 4) {
-                StateTag(text: preference.shownOnToday ? "On Today" : "Off Today")
-                StateTag(text: preference.usedInRecommendation ? "In recommendation" : "Not in recommendation")
+                StateTag(text: preference.shownOnToday ? "Shown on Today" : "Hidden from Today")
+                StateTag(text: preference.usedInRecommendation ? "Used for guidance" : "Not used for guidance")
             }
             .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil, alignment: .leading)
         }
@@ -325,9 +326,9 @@ private struct SignalSourceSettingsView: View {
     private var displayAndRecommendation: some View {
         Section {
             Toggle("Show on Today", isOn: preferenceBinding(\.shownOnToday))
-            Toggle("Use in workout recommendation", isOn: preferenceBinding(\.usedInRecommendation))
+            Toggle("Use for workout guidance", isOn: preferenceBinding(\.usedInRecommendation))
         } header: {
-            Text("Display & recommendation")
+            Text("Visibility & Guidance")
         } footer: {
             Text("A signal can stay visible without affecting your workout recommendation, or influence the recommendation while hidden from Today.")
         }
@@ -361,9 +362,9 @@ private struct SignalSourceSettingsView: View {
     }
 
     private var sourceHealth: some View {
-        Section("Source status") {
-            DataValueRow(label: "Used now", value: trend.sourceName ?? "No readable source")
-            DataValueRow(label: "Selection", value: sourceHealthLabel)
+        Section("Current Source") {
+            DataValueRow(label: "Using", value: trend.sourceName ?? "No readable source")
+            DataValueRow(label: "Source Choice", value: sourceHealthLabel)
             if let failure = queryFailure {
                 Label("Apple Health query unavailable", systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
@@ -466,7 +467,7 @@ private struct SignalSourceSettingsView: View {
     }
 
     private var sourceHealthLabel: String {
-        if queryFailure != nil { return "Query failed" }
+        if queryFailure != nil { return "Couldn’t update" }
         if trend.sourceHealth.state == .unavailable || trend.freshness == .missing { return "Unavailable" }
         if trend.freshness == .stale { return "Stale" }
         switch trend.sourceHealth.state {
@@ -578,13 +579,13 @@ private struct SourceObservationRow: View {
             if dynamicTypeSize.isAccessibilitySize {
                 VStack(alignment: .leading, spacing: 4) {
                     sourceTitle
-                    if usedNow { StateTag(text: "Used now", emphasized: true) }
+                    if usedNow { StateTag(text: "Using", emphasized: true) }
                 }
             } else {
                 HStack(alignment: .firstTextBaseline) {
                     sourceTitle
                     Spacer()
-                    if usedNow { StateTag(text: "Used now", emphasized: true) }
+                    if usedNow { StateTag(text: "Using", emphasized: true) }
                 }
             }
             Text("\(diagnostic.kind.title) · \(diagnostic.sampleCount) samples")

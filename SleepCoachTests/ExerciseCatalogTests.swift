@@ -2,6 +2,10 @@ import XCTest
 @testable import SleepCoach
 
 final class ExerciseCatalogTests: XCTestCase {
+    func testAutomaticPlanningUsesExactlySeventyTwoReviewedCatalogIdentifiers() {
+        XCTAssertEqual(CuratedExerciseCatalog.reviewedExerciseIDs.count, 72)
+    }
+
     func testCatalogDecodesSearchesAndBuildsTemplateExercise() throws {
         let exercise = try XCTUnwrap(ExerciseCatalogDecoder.decode(fixture()).first)
 

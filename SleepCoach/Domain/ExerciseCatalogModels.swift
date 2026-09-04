@@ -134,10 +134,12 @@ struct ExerciseDefinition: Decodable, Identifiable, Hashable, Sendable {
         return matchesQuery && matchesEquipment && matchesMuscle && matchesDifficulty
     }
 
-    func workoutExercise() -> WorkoutExercise {
+    func workoutExercise(loadUnit: LoadUnit = .pounds) -> WorkoutExercise {
         let compound = mechanic?.lowercased() == "compound"
         return WorkoutExercise(
             catalogID: id,
+            equipment: equipmentTitle,
+            movementPattern: planningMovementPattern,
             name: name,
             muscleGroup: mappedMuscleGroup,
             workingSets: 3,
@@ -145,6 +147,7 @@ struct ExerciseDefinition: Decodable, Identifiable, Hashable, Sendable {
             // A catalog cannot know a safe, personal training load. The
             // template editor asks the user to review this neutral value.
             targetWeight: 0,
+            loadUnit: loadUnit,
             targetRPE: 7,
             restSeconds: compound ? 120 : 75
         )
@@ -162,6 +165,22 @@ struct ExerciseDefinition: Decodable, Identifiable, Hashable, Sendable {
         if value.contains("calf") || value.contains("gastrocnemius") || value.contains("soleus") { return .calves }
         if value.contains("core") || value.contains("abdomin") || value.contains("oblique") { return .core }
         return .fullBody
+    }
+
+    private var planningMovementPattern: String {
+        let value = ([name, bodyPart, forceType ?? "", mechanic ?? ""] + tags)
+            .joined(separator: " ")
+            .lowercased()
+        if value.contains("squat") || value.contains("leg press") { return "squat" }
+        if value.contains("deadlift") || value.contains("hinge") || value.contains("good morning") { return "hinge" }
+        if value.contains("bench") || value.contains("push-up") || value.contains("chest press") { return "horizontalPush" }
+        if value.contains("row") { return "horizontalPull" }
+        if value.contains("overhead") || value.contains("shoulder press") || value.contains("military press") { return "verticalPush" }
+        if value.contains("pull-up") || value.contains("chin-up") || value.contains("pulldown") { return "verticalPull" }
+        if value.contains("lunge") || value.contains("split squat") || value.contains("step-up") { return "singleLeg" }
+        if value.contains("carry") || value.contains("farmer") { return "carry" }
+        if mappedMuscleGroup == .core { return "core" }
+        return "isolation"
     }
 }
 

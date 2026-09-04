@@ -49,7 +49,9 @@ xcrun simctl launch --terminate-running-process \
   --demo-data --skip-onboarding --tab=today
 ```
 
-Choose a tab with `--tab=today`, `plan`, `train`, `exercises`, or `settings`.
+Choose a primary tab with `--tab=today`, `plan`, `train`, or `progress`.
+The legacy `exercises` and `settings` values remain shortcuts to those nested
+destinations for deterministic QA.
 
 Focused routes are also available:
 
@@ -61,6 +63,10 @@ Focused routes are also available:
 - `--show-template-editor` opens a new template.
 - `--show-template-library` opens exercise selection for a new template.
 - `--show-active-workout` starts the first seeded template.
+- `--show-workout-adjustment` opens Today’s adjustment sheet.
+- `--show-workout-options` opens all three validated workout choices.
+- `--show-workout-detail` opens the recommended workout detail.
+- `--show-generated-workout` opens the generated workout logger unless another workout is already in progress.
 - `--show-progress` opens Training History.
 - `--show-recovery-progress` opens Recovery Trends.
 

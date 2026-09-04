@@ -8,17 +8,16 @@ This document is the product and engineering handoff for the simulator-validated
 
 | Destination | The question it owns | Primary action |
 | --- | --- | --- |
-| Today | How should I train today? | Choose workout |
+| Today | How should I train today, and why? | Start the validated recommendation |
 | Plan | When should I sleep, wake, and train tomorrow? | Apply plan |
 | Train | Which saved workout should I start or resume? | Resume active workout or start a template |
-| Exercises | How do I perform an exercise? | Browse/search the reference catalog |
-| Settings | Which data and system integrations may the app use? | Context-specific connection or source management |
+| Progress | How are recovery and training changing? | Compare Recovery or Training over 7D/28D |
 
-- Today owns the daily recommendation, its confidence, recovery signals, and Recovery Trends.
+- Today owns the daily recommendation, its explanation, immediate recovery signals, and the route to Settings.
 - Plan owns sleep need, gym duration, travel/buffer assumptions, Calendar connection, wake-alarm application, persistent applied status, and undo.
-- Train owns templates, active-workout state, and Training History. It must not push another top-level copy of Exercises.
-- Exercises is the top-level reference catalog. Reusing its selector while building a template is a contextual workflow, not duplicate navigation.
-- Settings owns Apple Health and Data & Sources. Calendar and alarm rows report status and direct the user to Plan, where those permissions have context.
+- Train owns templates, active-workout state, and the exercise library. Reusing the library selector while building a template is a contextual workflow, not duplicate navigation.
+- Progress owns Recovery and Training trends under one native segmented control.
+- Settings is one level below Today and owns Apple Health, Data & Sources, workout preferences, and privacy. Calendar and alarm rows report status and direct the user to Plan, where those permissions have context.
 
 ## Critical flows
 
@@ -27,16 +26,18 @@ This document is the product and engineering handoff for the simulator-validated
 1. Explain the value of Apple Health and that Calendar/alarm access is deferred.
 2. Let the user adjust their initial sleep target.
 3. Offer one primary `Connect Apple Health` action and a clear `Continue without health data` alternative.
-4. If the user skips, Today shows a focused connection state instead of a fabricated or unavailable training recommendation.
+4. If the user skips, Today still offers a deterministic training-only recommendation and clearly marks recovery guidance as unavailable.
 
 ### Daily decision
 
-1. Today states the training recommendation and supporting detail first.
-2. `Choose workout` switches to Train.
-3. Volume, effort, progression, readiness, confidence, and two leading reasons provide supporting evidence.
-4. Recovery signals and Recovery Trends are lower in the hierarchy.
+1. Today presents one validated workout with duration, exercise count, recovery, sleep, and rolling seven-day training count.
+2. `Adjust` changes time, equipment, focus, or effort; `Options` always shows exactly three valid plans.
+3. `Review Workout` reveals prescriptions, technique links, provenance, and the concise explanation.
+4. `Start Workout` opens the active logger directly. If another draft exists, Today cannot overwrite it and routes the user to Train.
+5. The deterministic planner owns every constraint. Optional on-device AI may rank valid plans or rewrite the explanation only.
+6. Recovery signals and detailed trends remain lower in the hierarchy.
 
-At Accessibility Dynamic Type sizes, the primary action remains pinned above the tab bar. Text remains fully scalable and the rest of the card scrolls.
+At Accessibility Dynamic Type sizes, text remains fully scalable, controls remain at least 44 points tall, and the complete card stays scrollable.
 
 ### Tomorrow plan
 
@@ -49,10 +50,11 @@ At Accessibility Dynamic Type sizes, the primary action remains pinned above the
 
 ### Workout
 
-1. Resume an active draft, or start one saved template.
+1. Resume an active draft, start one saved template, or start Today’s generated workout.
 2. While a draft is active, explain why other templates cannot start and prevent editing/deleting the active template underneath it.
 3. Build templates from the exercise catalog, with local editable sets, reps, load, RPE, rest, and order.
-4. Finish into Training History and per-exercise progress.
+4. Keep lb/kg attached to each stored load and convert before comparisons.
+5. Finish into Training History and per-exercise progress.
 
 ## Data-display rules
 
@@ -66,7 +68,7 @@ At Accessibility Dynamic Type sizes, the primary action remains pinned above the
 
 ## Implemented acceptance checks
 
-- iOS 26 simulator compile and unit suite.
+- iOS 26 simulator compile, static analysis, and 124-test unit suite.
 - Dark-mode iPhone 17 Pro review of all top-level screens, both trend destinations, Data & Sources, and first run.
 - Compact-width light-mode review of Today and Plan.
 - Accessibility Extra Large review with reachable primary actions.
@@ -77,7 +79,7 @@ Physical-device acceptance remains required for HealthKit permission states and 
 ## Follow-up backlog
 
 1. Replace scattered debug-route parsing with a typed debug router.
-2. Introduce a workout-flow coordinator so template selection, editing, and an active session cannot stack conflicting modal states.
+2. Introduce a workout-flow coordinator if future features add more entry points than Today and Train; the current draft guard prevents destructive overlap.
 3. Replace remaining generic global notices with local success/failure feedback near the affected content.
 4. Add VoiceOver traversal tests and chart descriptors in addition to Dynamic Type screenshots.
 5. Add favorites/recent exercises only after observing real catalog-search behavior; do not add more navigation until evidence shows it is needed.

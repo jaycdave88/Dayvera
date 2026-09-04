@@ -82,12 +82,12 @@ struct ExerciseLibraryView: View {
 
     private var libraryRoot: some View {
         libraryContent
-            .navigationTitle("Exercises")
+            .navigationTitle(isSelectionMode ? "Add Exercises" : "Exercises")
             .navigationBarTitleDisplayMode(dynamicTypeSize.isAccessibilitySize ? .inline : .large)
             .searchable(
                 text: $searchText,
                 placement: .navigationBarDrawer(displayMode: .always),
-                prompt: "Name, muscle, or equipment"
+                prompt: "Search exercises"
             )
             .toolbar {
                 if isSelectionMode {
@@ -255,26 +255,46 @@ struct ExerciseLibraryView: View {
             } label: {
                 ExerciseLibraryRow(exercise: exercise)
             }
-        } else if dynamicTypeSize.isAccessibilitySize {
-            VStack(alignment: .leading, spacing: 10) {
-                NavigationLink {
-                    detailView(for: exercise)
-                } label: {
-                    ExerciseLibraryRow(exercise: exercise)
-                }
-                selectionButton(for: exercise, usesTextLabel: true)
-            }
-            .padding(.vertical, 3)
         } else {
-            HStack(spacing: 10) {
-                NavigationLink {
-                    detailView(for: exercise)
-                } label: {
-                    ExerciseLibraryRow(exercise: exercise)
-                }
-                selectionButton(for: exercise, usesTextLabel: false)
-            }
+            selectionRow(exercise)
         }
+    }
+
+    private func selectionRow(_ exercise: ExerciseDefinition) -> some View {
+        let isExisting = existingCatalogIDs.contains(exercise.id)
+        let isSelected = selectedIDs.contains(exercise.id)
+        return HStack(spacing: 8) {
+            Button {
+                toggleSelection(exercise.id)
+            } label: {
+                HStack(spacing: 10) {
+                    ExerciseLibraryRow(exercise: exercise)
+                    Image(systemName: isExisting || isSelected ? "checkmark.circle.fill" : "circle")
+                        .font(.title2)
+                        .foregroundStyle(isExisting ? Color.secondary : Color.coachIndigo)
+                        .frame(width: 44, height: 44)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(isExisting)
+            .accessibilityLabel(
+                isExisting
+                    ? "\(exercise.name), already in template"
+                    : (isSelected ? "Remove \(exercise.name) from selection" : "Select \(exercise.name)")
+            )
+
+            NavigationLink {
+                detailView(for: exercise)
+            } label: {
+                Image(systemName: "info.circle")
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("About \(exercise.name)")
+        }
+        .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 4 : 0)
     }
 
     private func detailView(for exercise: ExerciseDefinition) -> some View {
@@ -283,34 +303,6 @@ struct ExerciseLibraryView: View {
             allowsSelection: onCommit != nil,
             isAlreadyInTemplate: existingCatalogIDs.contains(exercise.id),
             selectedIDs: $selectedIDs
-        )
-    }
-
-    @ViewBuilder
-    private func selectionButton(for exercise: ExerciseDefinition, usesTextLabel: Bool) -> some View {
-        let isExisting = existingCatalogIDs.contains(exercise.id)
-        let isSelected = selectedIDs.contains(exercise.id)
-
-        Button {
-            toggleSelection(exercise.id)
-        } label: {
-            if usesTextLabel {
-                Label(
-                    isExisting ? "Already in template" : (isSelected ? "Selected" : "Select exercise"),
-                    systemImage: isExisting || isSelected ? "checkmark.circle.fill" : "circle"
-                )
-                .frame(maxWidth: .infinity, minHeight: 44)
-            } else {
-                Image(systemName: isExisting || isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.title2)
-                    .frame(width: 44, height: 44)
-            }
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(isExisting ? Color.secondary : Color.coachIndigo)
-        .disabled(isExisting)
-        .accessibilityLabel(
-            isExisting ? "Already in template" : (isSelected ? "Remove \(exercise.name) from selection" : "Select \(exercise.name)")
         )
     }
 
@@ -348,7 +340,7 @@ struct ExerciseLibraryView: View {
 
     private var loadingState: some View {
         VStack(spacing: 14) {
-            ProgressView()
+            SwiftUI.ProgressView()
                 .controlSize(.large)
             Text("Loading exercise library…")
                 .font(.headline)
@@ -463,8 +455,8 @@ struct ExerciseLibraryView: View {
     }
 
     private var commitButtonTitle: String {
-        guard !selectedIDs.isEmpty else { return "Select at least one exercise" }
-        return "Add \(selectedIDs.count) \(selectedIDs.count == 1 ? "exercise" : "exercises")"
+        guard !selectedIDs.isEmpty else { return "Add Exercises" }
+        return "Add \(selectedIDs.count) \(selectedIDs.count == 1 ? "Exercise" : "Exercises")"
     }
 
     private func toggleSelection(_ id: String) {
@@ -618,7 +610,7 @@ private struct ExerciseLibraryRow: View {
     }
 }
 
-private struct ExerciseDetailView: View {
+struct ExerciseDetailView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let exercise: ExerciseDefinition
@@ -681,7 +673,7 @@ private struct ExerciseDetailView: View {
 
     private var instructionsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionTitle(title: "How to perform it")
+            SectionTitle(title: "How to Perform")
             if exercise.instructions.isEmpty {
                 Text("Step-by-step instructions are not available for this exercise yet.")
                     .font(.subheadline)
@@ -812,7 +804,7 @@ private struct ExerciseMetadataLabel: View {
 private enum ExerciseMediaMode: String, CaseIterable, Identifiable {
     case start = "Start"
     case finish = "Finish"
-    case autoPreview = "Two-position preview"
+    case autoPreview = "Preview"
 
     var id: String { rawValue }
 }
@@ -865,7 +857,7 @@ private struct ExerciseMediaViewer: View {
             }
 
             if imageURLs.count > 1, !reduceMotion {
-                Text("Two-position preview alternates the Start and Finish still illustrations—not a full-motion video.")
+                Text("Preview alternates the start and finish positions.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -929,7 +921,7 @@ private struct ExerciseAutoPreview: View {
             .transition(.opacity)
 
             if reduceMotion {
-                Label("Two-position preview paused by Reduce Motion", systemImage: "pause.circle")
+                Label("Preview paused by Reduce Motion", systemImage: "pause.circle")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -965,7 +957,7 @@ private struct CachedExerciseImage: View {
                     .scaledToFit()
                     .padding(6)
             } else if showsProgress, url != nil, !didFail {
-                ProgressView()
+                SwiftUI.ProgressView()
             } else {
                 Image(systemName: didFail ? "photo.badge.exclamationmark" : "figure.strengthtraining.traditional")
                     .font(.title2)

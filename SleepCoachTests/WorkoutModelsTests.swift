@@ -3,6 +3,43 @@ import XCTest
 @testable import SleepCoach
 
 final class WorkoutModelsTests: XCTestCase {
+    func testWorkoutReadinessDistinguishesMissingDataFromRealZero() {
+        let unavailable = WorkoutSessionRecord(
+            templateID: nil,
+            templateName: "No recovery data",
+            startedAt: Date(timeIntervalSince1970: 100),
+            endedAt: Date(timeIntervalSince1970: 200),
+            readiness: .moderate,
+            readinessScore: 0,
+            readinessAvailable: false,
+            sets: []
+        )
+        let realZero = WorkoutSessionRecord(
+            templateID: nil,
+            templateName: "Measured zero",
+            startedAt: Date(timeIntervalSince1970: 100),
+            endedAt: Date(timeIntervalSince1970: 200),
+            readiness: .low,
+            readinessScore: 0,
+            readinessAvailable: true,
+            sets: []
+        )
+        let legacyZero = WorkoutSessionRecord(
+            templateID: nil,
+            templateName: "Legacy",
+            startedAt: Date(timeIntervalSince1970: 100),
+            endedAt: Date(timeIntervalSince1970: 200),
+            readiness: .moderate,
+            readinessScore: 0,
+            sets: []
+        )
+        legacyZero.readinessWasAvailable = nil
+
+        XCTAssertNil(unavailable.recordedReadinessScore)
+        XCTAssertEqual(realZero.recordedReadinessScore, 0)
+        XCTAssertNil(legacyZero.recordedReadinessScore)
+    }
+
     func testWorkoutHealthExportStartsPendingAndFailedRetryIncrementsVersion() {
         let session = WorkoutSessionRecord(
             templateID: nil,
@@ -177,7 +214,59 @@ final class WorkoutModelsTests: XCTestCase {
         XCTAssertEqual(set.id, id)
         XCTAssertEqual(set.exerciseID, exerciseID)
         XCTAssertNil(set.catalogID)
+        XCTAssertNil(set.loadUnit)
+        XCTAssertEqual(set.resolvedLoadUnit, .pounds)
         XCTAssertEqual(set.progressionKey, "name:back squat")
+    }
+
+    func testLoadUnitsRemainPairedWithValuesAndConvertForComparison() {
+        XCTAssertEqual(LoadUnit.pounds.convert(220.462, to: .kilograms), 100, accuracy: 0.001)
+        XCTAssertEqual(LoadUnit.kilograms.convert(100, to: .pounds), 220.462, accuracy: 0.001)
+
+        let exerciseID = UUID()
+        let pounds = session(
+            id: UUID(),
+            day: 1,
+            sets: [CompletedSet(
+                exerciseID: exerciseID,
+                catalogID: "deadlift",
+                exerciseName: "Deadlift",
+                setNumber: 1,
+                weight: 220.462,
+                loadUnit: .pounds,
+                reps: 5,
+                rpe: 8,
+                isWarmup: false,
+                completedAt: .now
+            )]
+        )
+        let kilograms = session(
+            id: UUID(),
+            day: 2,
+            sets: [CompletedSet(
+                exerciseID: exerciseID,
+                catalogID: "deadlift",
+                exerciseName: "Deadlift",
+                setNumber: 1,
+                weight: 100,
+                loadUnit: .kilograms,
+                reps: 5,
+                rpe: 8,
+                isWarmup: false,
+                completedAt: .now
+            )]
+        )
+
+        let history = exercisePerformanceHistory(
+            from: [pounds, kilograms],
+            exerciseKey: "catalog:deadlift",
+            displayedIn: .kilograms
+        )
+
+        XCTAssertEqual(history.count, 2)
+        XCTAssertEqual(history[0].weight, 100, accuracy: 0.001)
+        XCTAssertEqual(history[1].weight, 100, accuracy: 0.001)
+        XCTAssertTrue(history.allSatisfy { $0.loadUnit == .kilograms })
     }
 
     func testExercisePerformanceUsesTopWorkingSetAndMarksLatestBestAsPB() {
@@ -247,6 +336,7 @@ final class WorkoutModelsTests: XCTestCase {
             workingSets: 3,
             targetReps: 10,
             targetWeight: 35,
+            loadUnit: .kilograms,
             targetRPE: 7,
             restSeconds: 90
         )
@@ -264,6 +354,7 @@ final class WorkoutModelsTests: XCTestCase {
 
         let restoredDraftSet = try XCTUnwrap(backfillingCatalogIDs(in: [legacyDraftSet], from: [restoredExercise]).first)
         XCTAssertEqual(restoredDraftSet.catalogID, "goblet-squat")
+        XCTAssertEqual(restoredDraftSet.loadUnit, .kilograms)
 
         let completed = CompletedSet(
             exerciseID: restoredDraftSet.exerciseID,
@@ -271,6 +362,7 @@ final class WorkoutModelsTests: XCTestCase {
             exerciseName: restoredDraftSet.exerciseName,
             setNumber: restoredDraftSet.setNumber,
             weight: restoredDraftSet.weight,
+            loadUnit: restoredDraftSet.loadUnit,
             reps: restoredDraftSet.reps,
             rpe: restoredDraftSet.rpe,
             isWarmup: false,
@@ -280,6 +372,7 @@ final class WorkoutModelsTests: XCTestCase {
         let restoredCompleted = try JSONDecoder().decode(CompletedSet.self, from: completedJSON)
 
         XCTAssertEqual(restoredCompleted.catalogID, "goblet-squat")
+        XCTAssertEqual(restoredCompleted.loadUnit, .kilograms)
         XCTAssertEqual(restoredCompleted.progressionKey, "catalog:goblet-squat")
     }
 

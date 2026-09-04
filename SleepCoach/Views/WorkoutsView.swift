@@ -12,6 +12,7 @@ struct WorkoutsView: View {
     @State private var showingNewTemplate = false
     @State private var templateToEdit: WorkoutTemplateRecord?
     @State private var activeTemplate: WorkoutTemplateRecord?
+    @State private var generatedDraftTemplate: WorkoutTemplateRecord?
     @State private var activeDraft: ActiveWorkoutDraft?
     @State private var templateToDelete: WorkoutTemplateRecord?
     @State private var showingDiscardDraft = false
@@ -23,11 +24,13 @@ struct WorkoutsView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 18) {
                 if let draft = activeDraft,
-                   let template = templates.first(where: { $0.id == draft.templateID }) {
+                   let template = templateForDraft(draft) {
                     draftCard(draft, template: template)
                 }
 
-                todayTrainingCard
+                if activeDraft == nil, let quickStartTemplate {
+                    quickStartCard(quickStartTemplate)
+                }
                 templateSectionHeader
 
                 if templates.isEmpty {
@@ -37,20 +40,39 @@ struct WorkoutsView: View {
                         templateCard(template)
                     }
                 }
-
-                progressNavigationCard
             }
             .padding()
         }
         .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle("Train")
         .navigationBarTitleDisplayMode(dynamicTypeSize.isAccessibilitySize ? .inline : .large)
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                NavigationLink {
+                    ExerciseLibraryView()
+                } label: {
+                    Image(systemName: "books.vertical")
+                }
+                .accessibilityLabel("Exercise Library")
+
+                Button {
+                    showingNewTemplate = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel("New Template")
+            }
+        }
         .sheet(isPresented: $showingNewTemplate) { TemplateEditorView() }
         .sheet(item: $templateToEdit) { template in
             TemplateEditorView(template: template)
         }
         .fullScreenCover(item: $activeTemplate, onDismiss: loadDraftState) { template in
-            ActiveWorkoutView(template: template, adjustment: appModel.plan.workoutAdjustment)
+            ActiveWorkoutView(
+                template: template,
+                adjustment: appModel.plan.workoutAdjustment,
+                loadUnit: appModel.trainingProfile.loadUnit
+            )
         }
         .navigationDestination(isPresented: $showingDebugProgress) {
             TrainingHistoryView()
@@ -97,56 +119,36 @@ struct WorkoutsView: View {
         }
     }
 
-    private var todayTrainingCard: some View {
+    private func quickStartCard(_ template: WorkoutTemplateRecord) -> some View {
         CoachCard {
-            VStack(alignment: .leading, spacing: 8) {
-                Label {
-                    Text("Today's training")
-                        .foregroundStyle(.primary)
-                } icon: {
-                    Image(systemName: appModel.snapshot.readinessAvailable ? appModel.snapshot.readinessBand.symbol : "ellipsis.circle")
-                        .foregroundStyle(appModel.snapshot.readinessAvailable ? appModel.snapshot.readinessBand.color : Color.coachIndigo)
-                }
-                .font(.caption.weight(.semibold))
-                Text(appModel.plan.workoutAdjustment.title)
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Quick Start", systemImage: "bolt.fill")
+                    .font(.headline)
+                    .foregroundStyle(Color.coachIndigo)
+                Text(template.name)
                     .font(.title3.bold())
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(appModel.plan.workoutAdjustment.detail)
+                Text("Repeat your most recent saved workout with today’s recovery limits applied.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                Button {
+                    activeTemplate = template
+                } label: {
+                    Label("Start \(template.name)", systemImage: "play.fill")
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.coachIndigo)
             }
         }
     }
 
-    @ViewBuilder
     private var templateSectionHeader: some View {
-        let title = activeDraft == nil ? "Start a workout" : "Workout templates"
+        let title = "Saved Workouts"
         let subtitle = activeDraft == nil
-            ? "Choose a template; today's readiness adjustment is applied when you start."
+            ? "Choose a template or build one from the exercise library."
             : "Finish or discard the workout in progress before starting another."
-        if dynamicTypeSize.isAccessibilitySize {
-            VStack(alignment: .leading, spacing: 10) {
-                SectionTitle(title: title, subtitle: subtitle)
-                newTemplateButton
-            }
-        } else {
-            HStack(alignment: .bottom, spacing: 12) {
-                SectionTitle(title: title, subtitle: subtitle)
-                newTemplateButton
-            }
-        }
-    }
-
-    private var newTemplateButton: some View {
-        Button {
-            showingNewTemplate = true
-        } label: {
-            Label("New template", systemImage: "plus")
-                .frame(minHeight: 44)
-        }
-        .buttonStyle(.bordered)
-        .accessibilityHint("Build a workout from library or custom exercises")
+        return SectionTitle(title: title, subtitle: subtitle)
     }
 
     private var emptyTemplatesCard: some View {
@@ -161,7 +163,7 @@ struct WorkoutsView: View {
                 Button {
                     showingNewTemplate = true
                 } label: {
-                    Label("Create template", systemImage: "plus.circle.fill")
+                    Label("Create Template", systemImage: "plus.circle.fill")
                         .frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(.borderedProminent)
@@ -170,40 +172,12 @@ struct WorkoutsView: View {
         }
     }
 
-    private var progressNavigationCard: some View {
-        NavigationLink {
-            TrainingHistoryView()
-        } label: {
-            CoachCard {
-                HStack(spacing: 14) {
-                    Image(systemName: "chart.xyaxis.line")
-                        .font(.title2)
-                        .foregroundStyle(Color.coachIndigo)
-                        .frame(width: 44, height: 44)
-                        .background(Color.coachIndigo.opacity(0.12), in: Circle())
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Training history")
-                            .font(.headline)
-                        Text(progressSummary)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    Image(systemName: "chevron.right")
-                        .font(.caption.bold())
-                        .foregroundStyle(.tertiary)
-                        .accessibilityHidden(true)
-                }
-                .frame(minHeight: 44)
-            }
+    private var quickStartTemplate: WorkoutTemplateRecord? {
+        if let latestTemplateID = sessions.first?.templateID,
+           let recent = templates.first(where: { $0.id == latestTemplateID }) {
+            return recent
         }
-        .buttonStyle(.plain)
-        .accessibilityHint("Shows training trends and completed sessions")
-    }
-
-    private var progressSummary: String {
-        guard let latest = sessions.first else { return "Completed workouts and training trends" }
-        return "Last completed \(latest.startedAt.shortDay)"
+        return templates.first
     }
 
     private func templateCard(_ template: WorkoutTemplateRecord) -> some View {
@@ -362,18 +336,33 @@ struct WorkoutsView: View {
             activeDraft = nil
             return
         }
-        guard templates.contains(where: { $0.id == draft.templateID }) else {
+        if templates.contains(where: { $0.id == draft.templateID }) {
+            generatedDraftTemplate = nil
+        } else if let exercises = draft.exercises, !exercises.isEmpty {
+            generatedDraftTemplate = WorkoutTemplateRecord(
+                id: draft.templateID,
+                name: draft.templateName ?? "Generated Workout",
+                exercises: exercises
+            )
+        } else {
             draftStore.clear()
+            generatedDraftTemplate = nil
             activeDraft = nil
             return
         }
         activeDraft = draft
+    }
+
+    private func templateForDraft(_ draft: ActiveWorkoutDraft) -> WorkoutTemplateRecord? {
+        templates.first(where: { $0.id == draft.templateID })
+            ?? (generatedDraftTemplate?.id == draft.templateID ? generatedDraftTemplate : nil)
     }
 }
 
 struct TemplateEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var appModel: AppModel
 
     private let template: WorkoutTemplateRecord?
     @State private var name: String
@@ -513,12 +502,12 @@ struct TemplateEditorView: View {
     private func appendCatalogExercises(_ definitions: [ExerciseDefinition]) {
         var seen = existingCatalogIDs
         for definition in definitions where seen.insert(definition.id).inserted {
-            exercises.append(definition.workoutExercise())
+            exercises.append(definition.workoutExercise(loadUnit: appModel.trainingProfile.loadUnit))
         }
     }
 
     private func prescriptionSummary(for exercise: WorkoutExercise) -> String {
-        "\(exercise.workingSets) sets × \(exercise.targetReps) reps · \(exercise.targetWeight.formatted(.number.precision(.fractionLength(0...1)))) lb · RPE \(exercise.targetRPE.formatted(.number.precision(.fractionLength(0...1)))) · \(exercise.restSeconds)s rest"
+        "\(exercise.workingSets) sets × \(exercise.targetReps) reps · \(exercise.targetWeight.formatted(.number.precision(.fractionLength(0...1)))) \(exercise.resolvedLoadUnit.symbol) · RPE \(exercise.targetRPE.formatted(.number.precision(.fractionLength(0...1)))) · \(exercise.restSeconds)s rest"
     }
 
     private func saveTemplate() {
@@ -541,6 +530,7 @@ struct TemplateEditorView: View {
 
 private struct ExercisePrescriptionEditorView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var appModel: AppModel
     @Binding var exercise: WorkoutExercise
 
     var body: some View {
@@ -559,10 +549,10 @@ private struct ExercisePrescriptionEditorView: View {
                 Stepper("Working sets: \(exercise.workingSets)", value: $exercise.workingSets, in: 1...10)
                 Stepper("Target reps: \(exercise.targetReps)", value: $exercise.targetReps, in: 1...30)
                 Stepper(
-                    "Load: \(exercise.targetWeight.formatted(.number.precision(.fractionLength(0...1)))) lb",
+                    "Load: \(exercise.targetWeight.formatted(.number.precision(.fractionLength(0...1)))) \(exercise.resolvedLoadUnit.symbol)",
                     value: $exercise.targetWeight,
-                    in: 0...1000,
-                    step: 2.5
+                    in: 0...exercise.resolvedLoadUnit.maximumWorkoutLoad,
+                    step: exercise.resolvedLoadUnit.inputStep
                 )
                 Stepper(
                     "Target RPE: \(exercise.targetRPE.formatted(.number.precision(.fractionLength(1))))",
@@ -584,11 +574,15 @@ private struct ExercisePrescriptionEditorView: View {
                 Button("Done") { dismiss() }
             }
         }
+        .onAppear {
+            exercise = exercise.converted(to: appModel.trainingProfile.loadUnit)
+        }
     }
 }
 
 private struct ExerciseEditorView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var appModel: AppModel
     let onSave: (WorkoutExercise) -> Void
     @State private var name = ""
     @State private var muscle: MuscleGroup = .fullBody
@@ -607,7 +601,12 @@ private struct ExerciseEditorView: View {
                 }
                 Stepper("Working sets: \(sets)", value: $sets, in: 1...10)
                 Stepper("Target reps: \(reps)", value: $reps, in: 1...30)
-                Stepper("Load: \(weight, specifier: "%.1f") lb", value: $weight, in: 0...1000, step: 2.5)
+                Stepper(
+                    "Load: \(weight, specifier: "%.1f") \(appModel.trainingProfile.loadUnit.symbol)",
+                    value: $weight,
+                    in: 0...appModel.trainingProfile.loadUnit.maximumWorkoutLoad,
+                    step: appModel.trainingProfile.loadUnit.inputStep
+                )
                 Stepper("Target RPE: \(rpe, specifier: "%.1f")", value: $rpe, in: 5...10, step: 0.5)
                 Stepper("Rest: \(rest) sec", value: $rest, in: 30...600, step: 15)
             }
@@ -623,6 +622,7 @@ private struct ExerciseEditorView: View {
                             workingSets: sets,
                             targetReps: reps,
                             targetWeight: weight,
+                            loadUnit: appModel.trainingProfile.loadUnit,
                             targetRPE: rpe,
                             restSeconds: rest
                         ))
@@ -642,6 +642,7 @@ struct ActiveSet: Identifiable, Codable, Hashable {
     let exerciseName: String
     let setNumber: Int
     var weight: Double
+    var loadUnit: LoadUnit? = nil
     var reps: Int
     var rpe: Double
     let restSeconds: Int
@@ -652,23 +653,24 @@ func backfillingCatalogIDs(
     in sets: [ActiveSet],
     from exercises: [WorkoutExercise]
 ) -> [ActiveSet] {
-    let catalogIDByExercise = exercises.reduce(into: [UUID: String]()) { result, exercise in
-        if let catalogID = exercise.catalogID, !catalogID.isEmpty {
-            result[exercise.id] = catalogID
-        }
-    }
+    let exerciseByID = Dictionary(uniqueKeysWithValues: exercises.map { ($0.id, $0) })
     return sets.map { set in
-        guard set.catalogID == nil, let catalogID = catalogIDByExercise[set.exerciseID] else {
-            return set
-        }
+        guard let exercise = exerciseByID[set.exerciseID] else { return set }
         var updated = set
-        updated.catalogID = catalogID
+        if updated.catalogID == nil,
+           let catalogID = exercise.catalogID,
+           !catalogID.isEmpty {
+            updated.catalogID = catalogID
+        }
+        if updated.loadUnit == nil { updated.loadUnit = exercise.resolvedLoadUnit }
         return updated
     }
 }
 
-private struct ActiveWorkoutDraft: Codable, Hashable {
+struct ActiveWorkoutDraft: Codable, Hashable {
     let templateID: UUID
+    var templateName: String? = nil
+    var exercises: [WorkoutExercise]? = nil
     let startedAt: Date
     let sets: [ActiveSet]
     let notes: String
@@ -701,7 +703,7 @@ func validWorkoutIntervalStart(
     return normalized
 }
 
-private struct ActiveWorkoutDraftStore {
+struct ActiveWorkoutDraftStore {
     private static let key = "activeWorkoutDraft"
     private static let fileName = "active-workout-draft.json"
     private let defaults: UserDefaults
@@ -776,11 +778,13 @@ struct ActiveWorkoutView: View {
     @EnvironmentObject private var appModel: AppModel
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.scenePhase) private var scenePhase
+    @ObservedObject private var catalogStore = ExerciseCatalogStore.shared
 
     let templateID: UUID
     let templateName: String
     let exercises: [WorkoutExercise]
     let adjustment: WorkoutAdjustment
+    let loadUnit: LoadUnit
     @State private var sets: [ActiveSet]
     @State private var startedAt = Date.now
     @State private var currentTime = Date.now
@@ -789,26 +793,38 @@ struct ActiveWorkoutView: View {
     @State private var showingDiscard = false
     @State private var notes = ""
     @State private var resumeNotice: String?
+    @State private var detailExercise: ExerciseDefinition?
+    @State private var detailSelection: [String] = []
     @FocusState private var focusedField: FocusedField?
     private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     private let draftStore = ActiveWorkoutDraftStore()
 
-    init(template: WorkoutTemplateRecord, adjustment: WorkoutAdjustment) {
+    init(template: WorkoutTemplateRecord, adjustment: WorkoutAdjustment, loadUnit: LoadUnit) {
         templateID = template.id
         templateName = template.name
-        exercises = template.exercises
+        let normalizedExercises = template.exercises.map { $0.converted(to: loadUnit) }
+        exercises = normalizedExercises
         self.adjustment = adjustment
+        self.loadUnit = loadUnit
         if let draft = ActiveWorkoutDraftStore().load(), draft.templateID == template.id {
             let now = Date.now
             let normalizedStart = normalizedWorkoutStart(savedStart: draft.startedAt, now: now)
-            _sets = State(initialValue: backfillingCatalogIDs(in: draft.sets, from: template.exercises))
+            let restoredExercises = (draft.exercises ?? normalizedExercises).map { $0.converted(to: loadUnit) }
+            let restoredSets = backfillingCatalogIDs(in: draft.sets, from: restoredExercises).map { set in
+                var converted = set
+                let source = set.loadUnit ?? .pounds
+                converted.weight = source.convert(set.weight, to: loadUnit)
+                converted.loadUnit = loadUnit
+                return converted
+            }
+            _sets = State(initialValue: restoredSets)
             _startedAt = State(initialValue: normalizedStart)
             _notes = State(initialValue: draft.notes)
             _resumeNotice = State(initialValue: normalizedStart == draft.startedAt ? nil : "This draft was from an earlier session, so its timer restarted. Your sets and notes were kept.")
         } else {
             var proposed: [ActiveSet] = []
-            let setCounts = adaptedWorkingSetCounts(for: template.exercises, volumeMultiplier: adjustment.volumeMultiplier)
-            for exercise in template.exercises {
+            let setCounts = adaptedWorkingSetCounts(for: normalizedExercises, volumeMultiplier: adjustment.volumeMultiplier)
+            for exercise in normalizedExercises {
                 let count = setCounts[exercise.id, default: exercise.workingSets]
                 for number in 1...count {
                     proposed.append(.init(
@@ -817,6 +833,7 @@ struct ActiveWorkoutView: View {
                         exerciseName: exercise.name,
                         setNumber: number,
                         weight: exercise.targetWeight,
+                        loadUnit: loadUnit,
                         reps: exercise.targetReps,
                         rpe: min(exercise.targetRPE, adjustment.rpeCap ?? 10),
                         restSeconds: exercise.restSeconds
@@ -839,16 +856,19 @@ struct ActiveWorkoutView: View {
                 }
 
                 Section {
-                    HStack {
-                        Label(elapsed, systemImage: "timer")
-                        Spacer()
-                        if restRemaining > 0 {
-                            Label {
-                                Text("Rest \(restRemaining)s")
-                            } icon: {
-                                Image(systemName: "hourglass").foregroundStyle(Color.coachAmber)
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Label(elapsed, systemImage: "timer")
+                            Spacer()
+                            if restRemaining > 0 {
+                                Label {
+                                    Text("Rest \(restRemaining)s")
+                                } icon: {
+                                    Image(systemName: "hourglass").foregroundStyle(Color.coachAmber)
+                                }
                             }
                         }
+                        if restRemaining > 0 { restTimerControls }
                     }
                     .font(.headline.monospacedDigit())
                 }
@@ -866,7 +886,18 @@ struct ActiveWorkoutView: View {
                 }
 
                 ForEach(exercises) { exercise in
-                    Section(exercise.name) {
+                    Section {
+                        if let catalogID = exercise.catalogID,
+                           catalogStore.exercises.contains(where: { $0.id == catalogID }) {
+                            Button {
+                                detailExercise = catalogStore.exercises.first(where: { $0.id == catalogID })
+                            } label: {
+                                Label("Technique and Instructions", systemImage: "info.circle")
+                                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(Color.coachIndigo)
+                        }
                         if dynamicTypeSize.isAccessibilitySize {
                             ForEach($sets) { $set in
                                 if set.exerciseID == exercise.id {
@@ -877,7 +908,7 @@ struct ActiveWorkoutView: View {
                             Grid(horizontalSpacing: 8, verticalSpacing: 10) {
                                 GridRow {
                                     columnHeader("SET", width: 28)
-                                    columnHeader("LB", width: 64)
+                                    columnHeader(loadUnit.symbol.uppercased(), width: 64)
                                     columnHeader("REPS", width: 52)
                                     columnHeader("RPE", width: 52)
                                     Color.clear.frame(width: 44, height: 1)
@@ -890,6 +921,8 @@ struct ActiveWorkoutView: View {
                                 }
                             }
                         }
+                    } header: {
+                        Text(exercise.name)
                     }
                 }
 
@@ -918,11 +951,20 @@ struct ActiveWorkoutView: View {
                     Button("Done") { focusedField = nil }
                 }
             }
+            .navigationDestination(item: $detailExercise) { exercise in
+                ExerciseDetailView(
+                    exercise: exercise,
+                    allowsSelection: false,
+                    isAlreadyInTemplate: true,
+                    selectedIDs: $detailSelection
+                )
+            }
             .onReceive(ticker) { date in
                 currentTime = date
                 if let restDeadline, date >= restDeadline { self.restDeadline = nil }
             }
             .onAppear { saveDraft() }
+            .task { await catalogStore.load() }
             .onChange(of: sets) { _, _ in saveDraft() }
             .onChange(of: notes) { _, _ in saveDraft() }
             .onChange(of: scenePhase) { _, phase in
@@ -967,7 +1009,6 @@ struct ActiveWorkoutView: View {
             completionButton(set).frame(width: 44)
         }
         .padding(.vertical, 3)
-        .opacity(set.wrappedValue.isComplete ? 0.6 : 1)
     }
 
     private func accessibleSetEditor(_ set: Binding<ActiveSet>) -> some View {
@@ -977,12 +1018,28 @@ struct ActiveWorkoutView: View {
                 Spacer()
                 completionButton(set)
             }
-            LabeledContent("Weight (lb)") { weightField(set).frame(maxWidth: 150) }
+            LabeledContent("Weight (\(loadUnit.symbol))") { weightField(set).frame(maxWidth: 150) }
             LabeledContent("Repetitions") { repsField(set).frame(maxWidth: 150) }
             LabeledContent("Effort (RPE)") { rpeField(set).frame(maxWidth: 150) }
         }
         .padding(.vertical, 5)
-        .opacity(set.wrappedValue.isComplete ? 0.6 : 1)
+    }
+
+    private var restTimerControls: some View {
+        HStack(spacing: 10) {
+            Button("+15 sec") {
+                restDeadline = (restDeadline ?? Date.now).addingTimeInterval(15)
+            }
+            .buttonStyle(.bordered)
+            .frame(minHeight: 44)
+
+            Button("Skip Rest") {
+                restDeadline = nil
+            }
+            .buttonStyle(.bordered)
+            .frame(minHeight: 44)
+        }
+        .font(.subheadline)
     }
 
     private func weightField(_ set: Binding<ActiveSet>) -> some View {
@@ -993,7 +1050,7 @@ struct ActiveWorkoutView: View {
             .multilineTextAlignment(.center)
             .textFieldStyle(.roundedBorder)
             .accessibilityLabel(
-                "\(set.wrappedValue.exerciseName), set \(set.wrappedValue.setNumber), weight in pounds"
+                "\(set.wrappedValue.exerciseName), set \(set.wrappedValue.setNumber), weight in \(loadUnit.spokenName)"
             )
     }
 
@@ -1053,8 +1110,8 @@ struct ActiveWorkoutView: View {
 
     private var workoutValidationMessage: String? {
         for set in sets where set.isComplete {
-            if !set.weight.isFinite || !(0...1_000).contains(set.weight) {
-                return "\(set.exerciseName), set \(set.setNumber): enter a load from 0 to 1,000 lb."
+            if !set.weight.isFinite || !(0...loadUnit.maximumWorkoutLoad).contains(set.weight) {
+                return "\(set.exerciseName), set \(set.setNumber): enter a load from 0 to \(loadUnit.maximumWorkoutLoad.formatted()) \(loadUnit.symbol)."
             }
             if !(1...1_000).contains(set.reps) {
                 return "\(set.exerciseName), set \(set.setNumber): enter 1 to 1,000 repetitions."
@@ -1069,6 +1126,8 @@ struct ActiveWorkoutView: View {
     private func saveDraft() {
         let saved = draftStore.save(.init(
             templateID: templateID,
+            templateName: templateName,
+            exercises: exercises,
             startedAt: startedAt,
             sets: sets,
             notes: notes
@@ -1093,15 +1152,20 @@ struct ActiveWorkoutView: View {
         guard workoutValidationMessage == nil else { return }
         let end = Date.now
         let effectiveStart = validWorkoutIntervalStart(savedStart: startedAt, end: end)
-        let completed = sets.filter(\.isComplete).map {
-            CompletedSet(
-                exerciseID: $0.exerciseID,
-                catalogID: $0.catalogID,
-                exerciseName: $0.exerciseName,
-                setNumber: $0.setNumber,
-                weight: $0.weight,
-                reps: $0.reps,
-                rpe: $0.rpe,
+        let completed = sets.filter(\.isComplete).map { activeSet in
+            let exercise = exercises.first(where: { $0.id == activeSet.exerciseID })
+            return CompletedSet(
+                exerciseID: activeSet.exerciseID,
+                catalogID: activeSet.catalogID,
+                muscleGroup: exercise?.muscleGroup,
+                equipment: exercise?.equipment,
+                movementPattern: exercise?.movementPattern,
+                exerciseName: activeSet.exerciseName,
+                setNumber: activeSet.setNumber,
+                weight: activeSet.weight,
+                loadUnit: activeSet.loadUnit ?? loadUnit,
+                reps: activeSet.reps,
+                rpe: activeSet.rpe,
                 isWarmup: false,
                 completedAt: end
             )
@@ -1113,6 +1177,7 @@ struct ActiveWorkoutView: View {
             endedAt: end,
             readiness: appModel.snapshot.readinessBand,
             readinessScore: appModel.snapshot.readinessScore,
+            readinessAvailable: appModel.snapshot.readinessAvailable,
             sets: completed,
             notes: notes
         )

@@ -6,13 +6,14 @@ Last updated: 2026-09-04
 
 The iOS 26 simulator scope is implemented and integrated. The project is a native, iPhone-only SwiftUI app with an iOS 26.0 deployment target.
 
-- Primary navigation is exactly **Today, Plan, Train, Exercises, Settings**.
-- Trends are nested one tap down: Today opens Recovery Trends and Train opens Training History. Both have 7D/28D controls.
-- Today leads with an actionable training decision and recovery-adjusted volume, effort, and manual progression guidance. Recovery can change the working-set count and cap RPE for a template the user chooses; Calendar affects schedule timing, and completed history is currently for review rather than plan generation. It explicitly states that Sleep Coach does not change weights automatically. Its default supporting signals are Sleep, HRV, and Resting Heart Rate; the user can show, hide, and reorder them. The two strongest included drivers are available directly inside the decision card.
+- Primary navigation is exactly **Today, Plan, Train, Progress**. Settings is in Today’s toolbar; the exercise library is in Train.
+- Recovery and training trends live under Progress with 7D/28D controls.
+- Today leads with a concrete, validated workout selected from exactly three options: recommended, shorter, and alternate focus. The deterministic planner uses the user’s goal, weekly target, available time, equipment, exclusions, enabled recovery signals, and local training history. Low confidence, high recent load, a reached weekly target, and low recovery conservatively reduce the training envelope. Progression suggestions are optional and require confirmation; weights never change automatically.
+- Optional Foundation Models personalization is explicitly opt-in and on device. It can rank only the three validated plans and write a short explanation; it cannot invent exercises or alter recovery, duration, equipment, exclusion, progression, or volume rules. The deterministic result remains available when the model, consent, power, or thermal state prevents personalization.
 - Plan works backward from the first hard Calendar commitment, leads with a schedule-based outcome, keeps Apply immediately reachable, persists the applied alarm/event status with Undo, and requires confirmation before changing anything. Calendar read failures show the fallback reason, overlapping refreshes coalesce into a final pass, and foreground refresh reconciles the saved state with the actual app-owned alarm and event. The optional energy guide is labeled as a wake-relative heuristic.
-- Train supports new/edit/delete templates, catalog multi-select, custom exercises, editable sets/reps/load/RPE/rest, reordering, readiness-adjusted starts, rest timing, autosaved active drafts, resume/save-and-close/discard/finish, and completed history. Resuming a draft older than six hours keeps its sets and notes but restarts the timer so an accidental multi-day Health workout cannot be exported.
+- Train supports new/edit/delete templates, catalog multi-select, custom exercises, editable sets/reps/load/RPE/rest, reordering, readiness-adjusted starts, rest timing, autosaved active drafts, resume/save-and-close/discard/finish, and completed history. Today cannot overwrite an unfinished workout; it routes the user back to the current draft. Resuming a draft older than six hours keeps its sets and notes but restarts the timer so an accidental multi-day Health workout cannot be exported.
 - A template with an active draft cannot be edited underneath that draft.
-- Training progress reports period sessions/working sets and per-exercise top-set estimated 1RM/PBs. It does not mislabel mixed-template total load as strength progress. Completed history does not yet choose future exercises or calculate automatic load increases.
+- Training progress reports period sessions/working sets and per-exercise top-set estimated 1RM/PBs. Load values retain their original lb/kg unit and are converted before cross-session comparison. Local history informs exercise familiarity, muscle recency, weekly load, and optional progression suggestions.
 
 ## Health and metrics implementation
 
@@ -51,11 +52,11 @@ The iOS 26 simulator scope is implemented and integrated. The project is a nativ
 ## QA evidence completed
 
 - An iOS 26 Simulator build succeeded after catalog, navigation, metrics, and workout integration.
-- The latest complete iOS 26 simulator suite ran **81 tests with zero failures or skips**. An earlier 58-test suite also passed on the connected development iPhone; that device result predates the latest hardening tests.
+- The release-candidate suite ran **124 tests with zero failures or skips** on both an iPhone 17 Pro iOS 26 simulator and the connected development iPhone before it was unplugged.
 - A fresh simulator build also succeeded after all functional and UI audit fixes. The current integrated Swift source is green.
 - Final unsigned Debug and Release builds both succeeded against the physical iOS 26 device SDK with signing disabled, static analysis passed, and a current signed Debug device build succeeded.
 - A clean Release archive succeeded, and its shipped app executable contained no machine-specific absolute source paths. Debug symbols remain in the separate dSYM rather than the app bundle.
-- Visual inspection was completed on the iPhone 17 Pro iOS 26 simulator for first run, Today, Plan, applied Plan, Train, active workout, Exercises, exercise detail, template library selection, both Training and Recovery progress, Settings, Data & Sources, and per-signal source controls in dark mode.
+- Visual inspection was completed on the iPhone 17 Pro iOS 26 simulator for first run, Today’s generated workout, adjustment, all three options, workout detail, Plan, applied Plan, Train, active workout, Exercises, exercise detail, template library selection, both Training and Recovery progress, Settings, Data & Sources, and per-signal source controls in dark mode.
 - Compact-width inspection was completed on an iPhone SE (3rd generation) iOS 26 simulator in light mode for Plan, Train, and Exercises.
 - Accessibility inspection was completed on the compact simulator for Today, Plan, active workout, Exercises, Training progress, and Data & Sources. An additional Increase Contrast pass was completed on Today. Screens remain scrollable, controls remain reachable, and major navigation titles switch inline at accessibility sizes.
 - Layouts use Dynamic Type-aware stacking, 44-point interactive targets, semantic labels for charts and controls, explicit non-color status text/symbols, dark/light adaptive colors, and Reduce Motion behavior for exercise preview.
@@ -68,14 +69,14 @@ The iOS 26 simulator scope is implemented and integrated. The project is a nativ
 - Xcode's iOS 26.5 platform support (23F77, 8.52 GB) was downloaded and installed, resolving the prior device-platform mismatch.
 - The app and test targets use automatic signing. The public project intentionally leaves `DEVELOPMENT_TEAM` blank; choose a local team in Xcode before the next phone deployment. The bundle identifiers are `com.momoai.personalassistant.sleepcoach` and `.tests`, and HealthKit capability metadata is declared alongside the entitlements.
 - Automatic provisioning registered the development phone and generated a profile containing the HealthKit and HealthKit background-delivery entitlements. Provisioning profiles and certificates are excluded from version control.
-- Signed physical-device builds use the local development identity without writing its team or device identifiers into the public project. The latest hardened build compiled and installed over the existing app without removing local data. Remote launch is pending because the phone is locked; the owner must unlock it for launch and the remaining permission/system-integration checks. An earlier integrated build completed 58 tests with zero failures or skips on the phone.
+- Signed physical-device builds use the local development identity without writing its team or device identifiers into the public project. The latest release-candidate suite completed 124 tests with zero failures or skips on the connected phone before it was unplugged. Installation and hands-on permission/source acceptance resume when the phone is reconnected and unlocked.
 - A clean simulator compile also succeeded after the project-signing changes.
 
 ## Current simulator fixtures
 
 QA uses iPhone 17 Pro and compact-width iPhone simulators on iOS 26. Their machine-specific UUIDs are intentionally omitted; use `xcrun simctl list devices available` and the portable commands in `DEVELOPMENT.md`.
 
-Debug builds support deterministic `--demo-data`, `--demo-health-partial`, `--demo-applied-plan`, `--tab=<today|plan|train|exercises|settings>`, `--show-data-sources`, `--show-signal-source=<metric>`, `--show-exercise=<repdb-id>`, `--show-template-editor`, `--show-template-library`, `--show-active-workout`, `--show-progress`, and `--show-recovery-progress` routes. See `DEVELOPMENT.md` for commands and prerequisites.
+Debug builds support deterministic `--demo-data`, `--demo-health-partial`, `--demo-applied-plan`, `--tab=<today|plan|train|progress>`, `--show-data-sources`, `--show-signal-source=<metric>`, `--show-exercise=<repdb-id>`, `--show-template-editor`, `--show-template-library`, `--show-active-workout`, `--show-workout-adjustment`, `--show-workout-options`, `--show-workout-detail`, `--show-generated-workout`, `--show-progress`, and `--show-recovery-progress` routes. Legacy `--tab=exercises` and `--tab=settings` remain QA shortcuts to the nested destinations. See `DEVELOPMENT.md` for commands and prerequisites.
 
 All `--show-…` routes self-select their required tab. A paired `--tab` argument is optional.
 
@@ -91,6 +92,9 @@ All `--show-…` routes self-select their required tab. A paired `--tab` argumen
 - Health source and recommendation trust are now user-controlled and separately explained instead of being collapsed into a generic Connected/High-confidence state.
 - Initial Health authorization is read-only; workout write permission is requested contextually at completion. A setup error remains retryable instead of dismissing onboarding.
 - Workout number pads have a Done control, set completion uses 44-point targets, and stale drafts cannot create multi-day workout durations.
+- Workout loads retain their unit at the exercise, active-set, and completed-set boundaries. Legacy untagged loads are interpreted as pounds and converted before comparison, preventing a unit preference change from relabeling 100 lb as 100 kg.
+- Recommendation consent is enforced before the normalized state is built; disabled sleep, HRV, or resting-heart-rate values cannot reach the planner, evidence list, or optional model.
+- A generated workout cannot replace an autosaved workout already in progress.
 - Calendar read failures, queued refreshes, applied-plan drift, background Health delivery, and idempotent workout-export retries have dedicated regression coverage.
 
 ## Reproducible simulator validation
@@ -111,4 +115,4 @@ xcodebuild test \
 
 On the development iPhone, complete runtime acceptance for real Eight Sleep/Hume/Apple Watch samples and exact source attribution; first-run, limited-history, revoked, and restored HealthKit access; stale and mixed-source fallback; saving a finished workout to Health; Calendar authorization/event creation across timezone and DST changes; and an approved AlarmKit wake alarm firing.
 
-Simulator QA validates layout, navigation, persistence, algorithms, catalog networking/cache behavior, and deterministic lifecycle flows. It cannot validate real vendor sync timing, HealthKit permission sheets or data provenance on the owner’s device, or an AlarmKit alert firing on hardware.
+Simulator QA validates layout, navigation, persistence, algorithms, catalog networking/cache behavior, and deterministic lifecycle flows. The next phone session still needs runtime acceptance for real vendor sync timing, HealthKit permission sheets and data provenance, and an AlarmKit alert firing on hardware.

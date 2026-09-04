@@ -148,7 +148,7 @@ struct NightPlanView: View {
             } label: {
                 if appModel.isApplying {
                     HStack {
-                        ProgressView()
+                        SwiftUI.ProgressView()
                         Text("Applying plan…")
                     }
                     .frame(maxWidth: .infinity, minHeight: 44)

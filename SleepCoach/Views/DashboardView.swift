@@ -7,26 +7,30 @@ struct DashboardView: View {
     @State private var showingRecommendationReasons = false
     @State private var showingDebugRecoveryTrends = false
     let onOpenTrain: () -> Void
+    let onOpenPlan: () -> Void
     let onOpenDataSources: () -> Void
 
     init(
         onOpenTrain: @escaping () -> Void = {},
+        onOpenPlan: @escaping () -> Void = {},
         onOpenDataSources: @escaping () -> Void = {}
     ) {
         self.onOpenTrain = onOpenTrain
+        self.onOpenPlan = onOpenPlan
         self.onOpenDataSources = onOpenDataSources
     }
 
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 18) {
+                TodayWorkoutRecommendationView(onOpenTrain: onOpenTrain)
                 if appModel.snapshot.readinessAvailable {
-                    trainingDecision
                     recoverySignals
                     recoveryTrendsNavigation
                 } else {
                     connectCard
                 }
+                morningPlanCard
                 safetyNote
             }
             .padding()
@@ -34,18 +38,10 @@ struct DashboardView: View {
         .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle("Today")
         .navigationBarTitleDisplayMode(dynamicTypeSize.isAccessibilitySize ? .inline : .large)
-        .safeAreaInset(edge: .bottom) {
-            if dynamicTypeSize.isAccessibilitySize {
-                accessibilityPrimaryAction
-                    .padding(.horizontal)
-                    .padding(.vertical, 10)
-                    .background(.bar)
-            }
-        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { Task { await appModel.refresh() } } label: {
-                    if appModel.isRefreshing { ProgressView() }
+                    if appModel.isRefreshing { SwiftUI.ProgressView() }
                     else { Image(systemName: "arrow.clockwise") }
                 }
                 .disabled(appModel.isRefreshing)
@@ -62,6 +58,40 @@ struct DashboardView: View {
             }
             #endif
         }
+    }
+
+    private var morningPlanCard: some View {
+        CoachCard {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Label("Tomorrow Morning", systemImage: "alarm.fill")
+                        .font(.headline)
+                    Spacer()
+                    Text(appModel.plan.confidence.title)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+                HStack(spacing: 0) {
+                    planTime("Wake", date: appModel.plan.wakeTime)
+                    Divider().frame(height: 34)
+                    planTime("Train", date: appModel.plan.gymStart)
+                    Divider().frame(height: 34)
+                    planTime("Done", date: appModel.plan.gymEnd)
+                }
+                Button("Review Morning Plan") { onOpenPlan() }
+                    .buttonStyle(.bordered)
+                    .frame(minHeight: 44)
+            }
+        }
+    }
+
+    private func planTime(_ title: String, date: Date) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.caption).foregroundStyle(.secondary)
+            Text(date.shortTime).font(.subheadline.bold()).monospacedDigit()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 
     private var trainingDecision: some View {
@@ -186,11 +216,9 @@ struct DashboardView: View {
                 Text(recoveryUnavailableDetail)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                if !dynamicTypeSize.isAccessibilitySize {
-                    recoveryPrimaryAction
-                }
+                recoveryPrimaryAction
 
-                Button("Train without health guidance") {
+                Button("Browse saved workouts") {
                     onOpenTrain()
                 }
                 .buttonStyle(.plain)
@@ -234,36 +262,27 @@ struct DashboardView: View {
         }
     }
 
-    @ViewBuilder
-    private var accessibilityPrimaryAction: some View {
-        if appModel.snapshot.readinessAvailable {
-            trainButton
-        } else {
-            recoveryPrimaryAction
-        }
-    }
-
     private var recoveryUnavailableTitle: String {
-        if !hasEnabledRecommendationSignal { return "Choose recommendation signals" }
-        if appModel.healthConnectionState == .notRequested { return "Connect your health data" }
-        return "Recommendation unavailable"
+        if !hasEnabledRecommendationSignal { return "Choose recovery signals" }
+        if appModel.healthConnectionState == .notRequested { return "Add recovery context" }
+        return "Recovery guidance unavailable"
     }
 
     private var recoveryUnavailableDetail: String {
         if !hasEnabledRecommendationSignal {
-            return "No signal is currently allowed to shape the workout recommendation. Choose at least one in Data & Sources."
+            return "No signal is currently allowed to add recovery context. Choose at least one in Data & Sources; workout planning still uses your preferences and training history."
         }
         switch appModel.healthConnectionState {
         case .notRequested:
-            return "Eight Sleep and Hume should share through Apple Health. Sleep Coach reads only the three recovery categories it uses."
+            return "Connect Apple Health to add supported sleep, HRV, and resting-heart-rate data. Workout planning still works from your preferences and training history."
         case .accessRequested, .noReadableSamples:
-            return "Apple Health has not returned readable recovery samples yet. Check sharing in Eight Sleep, Hume, and Apple Health, then refresh."
+            return "Apple Health has not returned readable recovery samples yet. Check source sharing, then refresh; today’s workout still uses your preferences and training history."
         case .refreshFailed:
-            return "The latest Apple Health refresh failed, so the previous recommendation was cleared instead of being shown as current."
+            return "The latest Apple Health refresh failed, so stale recovery context was removed. Today’s workout still uses your preferences and training history."
         case .partialData(_, _):
-            return "Some Apple Health queries failed, and the remaining enabled signals do not yet support a recommendation. Review the affected signal in Data & Sources."
+            return "Some Apple Health queries failed, and the remaining enabled signals do not yet support recovery guidance. Review the affected signal in Data & Sources."
         case .dataReceived(_), .demoData:
-            return "Received data does not yet include enough current history from your enabled signals. Review freshness and baseline depth in Data & Sources."
+            return "Received data does not yet include enough current history for recovery guidance. Review freshness and baseline depth in Data & Sources."
         }
     }
 

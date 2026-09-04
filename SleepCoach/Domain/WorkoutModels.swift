@@ -16,14 +16,35 @@ enum MuscleGroup: String, Codable, CaseIterable, Identifiable, Sendable {
 struct WorkoutExercise: Identifiable, Codable, Hashable, Sendable {
     var id = UUID()
     var catalogID: String? = nil
+    /// Durable planning metadata. Optional values keep templates created before
+    /// workout generation fully decodable.
+    var equipment: String? = nil
+    var movementPattern: String? = nil
     var name: String
     var muscleGroup: MuscleGroup
     var workingSets: Int
     var targetReps: Int
     var targetWeight: Double
+    /// Unit paired with `targetWeight`. Templates created before unit tracking
+    /// decode as `nil` and are treated as pounds, the app's historical unit.
+    var loadUnit: LoadUnit? = nil
     var targetRPE: Double
     var restSeconds: Int
     var supersetGroup: String?
+
+    var resolvedLoadUnit: LoadUnit { loadUnit ?? .pounds }
+
+    func converted(to destination: LoadUnit) -> WorkoutExercise {
+        guard resolvedLoadUnit != destination else {
+            var tagged = self
+            tagged.loadUnit = destination
+            return tagged
+        }
+        var converted = self
+        converted.targetWeight = resolvedLoadUnit.convert(targetWeight, to: destination)
+        converted.loadUnit = destination
+        return converted
+    }
 }
 
 struct CompletedSet: Identifiable, Codable, Hashable, Sendable {
@@ -32,9 +53,16 @@ struct CompletedSet: Identifiable, Codable, Hashable, Sendable {
     /// Stable catalog identity when the exercise came from the bundled library.
     /// Optional so sessions written before catalog integration continue to decode.
     var catalogID: String? = nil
+    /// Snapshot the context needed for future planning so deleting or editing a
+    /// template never rewrites what the user actually trained.
+    var muscleGroup: MuscleGroup? = nil
+    var equipment: String? = nil
+    var movementPattern: String? = nil
     var exerciseName: String
     var setNumber: Int
     var weight: Double
+    /// Unit paired with `weight`. Legacy records used pounds.
+    var loadUnit: LoadUnit? = nil
     var reps: Int
     var rpe: Double
     var isWarmup: Bool
@@ -55,6 +83,8 @@ struct CompletedSet: Identifiable, Codable, Hashable, Sendable {
         guard !isWarmup, weight > 0, reps > 0 else { return nil }
         return weight * (1 + Double(reps) / 30)
     }
+
+    var resolvedLoadUnit: LoadUnit { loadUnit ?? .pounds }
 }
 
 struct ExerciseProgressOption: Identifiable, Hashable, Sendable {
@@ -69,6 +99,7 @@ struct ExercisePerformancePoint: Identifiable, Hashable, Sendable {
     let exerciseName: String
     let date: Date
     let weight: Double
+    let loadUnit: LoadUnit
     let reps: Int
     let rpe: Double
     let estimatedOneRepMax: Double
@@ -96,7 +127,8 @@ func exerciseProgressOptions(from sessions: [WorkoutSessionRecord]) -> [Exercise
 
 func exercisePerformanceHistory(
     from sessions: [WorkoutSessionRecord],
-    exerciseKey: String
+    exerciseKey: String,
+    displayedIn displayUnit: LoadUnit? = nil
 ) -> [ExercisePerformancePoint] {
     var points = sessions.compactMap { session -> ExercisePerformancePoint? in
         let candidates = session.sets.filter {
@@ -105,15 +137,17 @@ func exercisePerformanceHistory(
         guard let topSet = candidates.max(by: {
             ($0.estimatedOneRepMax ?? 0) < ($1.estimatedOneRepMax ?? 0)
         }), let estimate = topSet.estimatedOneRepMax else { return nil }
+        let unit = displayUnit ?? topSet.resolvedLoadUnit
         return ExercisePerformancePoint(
             sessionID: session.id,
             exerciseKey: exerciseKey,
             exerciseName: topSet.exerciseName,
             date: session.startedAt,
-            weight: topSet.weight,
+            weight: topSet.resolvedLoadUnit.convert(topSet.weight, to: unit),
+            loadUnit: unit,
             reps: topSet.reps,
             rpe: topSet.rpe,
-            estimatedOneRepMax: estimate,
+            estimatedOneRepMax: topSet.resolvedLoadUnit.convert(estimate, to: unit),
             isPersonalBest: false
         )
     }.sorted { $0.date < $1.date }
@@ -193,6 +227,9 @@ final class WorkoutSessionRecord {
     var endedAt: Date
     var readinessRaw: String
     var readinessScore: Int
+    /// `nil` identifies records created before availability was persisted. For
+    /// those records, a nonzero score is the only evidence that recovery existed.
+    var readinessWasAvailable: Bool? = nil
     var totalVolume: Double
     var setsData: Data
     var notes: String
@@ -213,6 +250,7 @@ final class WorkoutSessionRecord {
         endedAt: Date,
         readiness: ReadinessBand,
         readinessScore: Int,
+        readinessAvailable: Bool = true,
         sets: [CompletedSet],
         notes: String = "",
         healthExportState: WorkoutHealthExportState = .pending,
@@ -226,6 +264,7 @@ final class WorkoutSessionRecord {
         self.endedAt = endedAt
         self.readinessRaw = readiness.rawValue
         self.readinessScore = readinessScore
+        self.readinessWasAvailable = readinessAvailable
         self.totalVolume = sets.filter { !$0.isWarmup }.reduce(0) { $0 + $1.volume }
         self.setsData = (try? JSONEncoder().encode(sets)) ?? Data()
         self.notes = notes
@@ -236,6 +275,13 @@ final class WorkoutSessionRecord {
 
     var readiness: ReadinessBand {
         ReadinessBand(rawValue: readinessRaw) ?? .moderate
+    }
+
+    /// Preserves a genuine score of zero for new records while treating the
+    /// historical zero sentinel as missing recovery data.
+    var recordedReadinessScore: Int? {
+        let wasAvailable = readinessWasAvailable ?? (readinessScore > 0)
+        return wasAvailable ? readinessScore : nil
     }
 
     var sets: [CompletedSet] {

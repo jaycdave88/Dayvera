@@ -189,6 +189,9 @@ final class AppModel: ObservableObject {
             plan = wellness.plan(snapshot: snapshot, commitment: latestCommitment, preferences: preferences, now: .now)
         }
     }
+    @Published var trainingProfile: TrainingProfile = .default {
+        didSet { saveTrainingProfile() }
+    }
 
     var healthStatus: String {
         guard healthBackgroundDeliveryFailure != nil else { return healthConnectionState.label }
@@ -209,6 +212,7 @@ final class AppModel: ObservableObject {
     private var refreshWaiters: [CheckedContinuation<Void, Never>] = []
     private static let healthAuthorizationRequestedKey = "healthAuthorizationRequested"
     private static let wellnessPreferencesKey = "wellnessPreferences"
+    private static let trainingProfileKey = "trainingProfile"
     private static let appliedPlanStatusKey = "appliedPlanStatus"
 
     init(
@@ -273,6 +277,17 @@ final class AppModel: ObservableObject {
             }
         } else {
             self.preferences = .default
+        }
+        if let data = resolvedPrivateStateStore.data(forKey: Self.trainingProfileKey),
+           let saved = try? JSONDecoder().decode(TrainingProfile.self, from: data) {
+            self.trainingProfile = saved
+        } else if let legacyData = defaults.data(forKey: Self.trainingProfileKey),
+                  let saved = try? JSONDecoder().decode(TrainingProfile.self, from: legacyData) {
+            self.trainingProfile = saved
+            if resolvedPrivateStateStore.set(legacyData, forKey: Self.trainingProfileKey),
+               resolvedPrivateStateStore.removesLegacyDefaultsAfterSave {
+                defaults.removeObject(forKey: Self.trainingProfileKey)
+            }
         }
         self.healthConnectionState = demoMode
             ? .demoData
@@ -786,6 +801,17 @@ final class AppModel: ObservableObject {
             } else {
                 notice = "Sleep Coach couldn’t securely save your preferences. Keep the app open and try again after unlocking your iPhone."
             }
+        }
+    }
+
+    private func saveTrainingProfile() {
+        guard let data = try? JSONEncoder().encode(trainingProfile) else { return }
+        if privateStateStore.set(data, forKey: Self.trainingProfileKey) {
+            if privateStateStore.removesLegacyDefaultsAfterSave {
+                defaults.removeObject(forKey: Self.trainingProfileKey)
+            }
+        } else {
+            notice = "Sleep Coach couldn’t securely save your training preferences. Keep the app open and try again after unlocking your iPhone."
         }
     }
 

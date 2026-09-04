@@ -34,6 +34,17 @@
 		B00000000000000000000025 /* ExerciseLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000029 /* ExerciseLibraryView.swift */; };
 		B00000000000000000000026 /* DataSourcesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000030 /* DataSourcesView.swift */; };
 		B00000000000000000000027 /* HealthKitServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000031 /* HealthKitServiceTests.swift */; };
+		B00000000000000000000028 /* WorkoutPlanningModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000032 /* WorkoutPlanningModels.swift */; };
+		B00000000000000000000029 /* TrainingProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000033 /* TrainingProfile.swift */; };
+		B00000000000000000000030 /* CuratedExerciseCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000034 /* CuratedExerciseCatalog.swift */; };
+		B00000000000000000000031 /* DailyTrainingStateBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000035 /* DailyTrainingStateBuilder.swift */; };
+		B00000000000000000000032 /* FoundationModelWorkoutPersonalizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000036 /* FoundationModelWorkoutPersonalizer.swift */; };
+		B00000000000000000000033 /* WorkoutPersonalizationRequestBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000037 /* WorkoutPersonalizationRequestBuilder.swift */; };
+		B00000000000000000000034 /* WorkoutPlanningEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000038 /* WorkoutPlanningEngine.swift */; };
+		B00000000000000000000035 /* TodayWorkoutRecommendationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000039 /* TodayWorkoutRecommendationView.swift */; };
+		B00000000000000000000036 /* FoundationModelWorkoutPersonalizerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000040 /* FoundationModelWorkoutPersonalizerTests.swift */; };
+		B00000000000000000000037 /* WorkoutPlanningEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000041 /* WorkoutPlanningEngineTests.swift */; };
+		D7A100000000000000000001 /* DailyTrainingStateBuilderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7A100000000000000000002 /* DailyTrainingStateBuilderTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -78,6 +89,17 @@
 		F00000000000000000000029 /* ExerciseLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseLibraryView.swift; sourceTree = "<group>"; };
 		F00000000000000000000030 /* DataSourcesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataSourcesView.swift; sourceTree = "<group>"; };
 		F00000000000000000000031 /* HealthKitServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitServiceTests.swift; sourceTree = "<group>"; };
+		F00000000000000000000032 /* WorkoutPlanningModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutPlanningModels.swift; sourceTree = "<group>"; };
+		F00000000000000000000033 /* TrainingProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrainingProfile.swift; sourceTree = "<group>"; };
+		F00000000000000000000034 /* CuratedExerciseCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CuratedExerciseCatalog.swift; sourceTree = "<group>"; };
+		F00000000000000000000035 /* DailyTrainingStateBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyTrainingStateBuilder.swift; sourceTree = "<group>"; };
+		F00000000000000000000036 /* FoundationModelWorkoutPersonalizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoundationModelWorkoutPersonalizer.swift; sourceTree = "<group>"; };
+		F00000000000000000000037 /* WorkoutPersonalizationRequestBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutPersonalizationRequestBuilder.swift; sourceTree = "<group>"; };
+		F00000000000000000000038 /* WorkoutPlanningEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutPlanningEngine.swift; sourceTree = "<group>"; };
+		F00000000000000000000039 /* TodayWorkoutRecommendationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayWorkoutRecommendationView.swift; sourceTree = "<group>"; };
+		F00000000000000000000040 /* FoundationModelWorkoutPersonalizerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoundationModelWorkoutPersonalizerTests.swift; sourceTree = "<group>"; };
+		F00000000000000000000041 /* WorkoutPlanningEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutPlanningEngineTests.swift; sourceTree = "<group>"; };
+		D7A100000000000000000002 /* DailyTrainingStateBuilderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyTrainingStateBuilderTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -136,6 +158,8 @@
 				F00000000000000000000003 /* HealthModels.swift */,
 				F00000000000000000000004 /* WorkoutModels.swift */,
 				F00000000000000000000026 /* ExerciseCatalogModels.swift */,
+				F00000000000000000000032 /* WorkoutPlanningModels.swift */,
+				F00000000000000000000033 /* TrainingProfile.swift */,
 			);
 			path = Domain;
 			sourceTree = "<group>";
@@ -149,6 +173,11 @@
 				F00000000000000000000008 /* AlarmService.swift */,
 				F00000000000000000000024 /* DemoServices.swift */,
 				F00000000000000000000027 /* ExerciseCatalogStore.swift */,
+				F00000000000000000000034 /* CuratedExerciseCatalog.swift */,
+				F00000000000000000000035 /* DailyTrainingStateBuilder.swift */,
+				F00000000000000000000036 /* FoundationModelWorkoutPersonalizer.swift */,
+				F00000000000000000000037 /* WorkoutPersonalizationRequestBuilder.swift */,
+				F00000000000000000000038 /* WorkoutPlanningEngine.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -165,6 +194,7 @@
 				F00000000000000000000015 /* SettingsView.swift */,
 				F00000000000000000000029 /* ExerciseLibraryView.swift */,
 				F00000000000000000000030 /* DataSourcesView.swift */,
+				F00000000000000000000039 /* TodayWorkoutRecommendationView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -186,6 +216,9 @@
 				F00000000000000000000025 /* AppModelLifecycleTests.swift */,
 				F00000000000000000000028 /* ExerciseCatalogTests.swift */,
 				F00000000000000000000031 /* HealthKitServiceTests.swift */,
+				F00000000000000000000040 /* FoundationModelWorkoutPersonalizerTests.swift */,
+				F00000000000000000000041 /* WorkoutPlanningEngineTests.swift */,
+				D7A100000000000000000002 /* DailyTrainingStateBuilderTests.swift */,
 			);
 			path = SleepCoachTests;
 			sourceTree = "<group>";
@@ -324,6 +357,14 @@
 				B00000000000000000000023 /* ExerciseCatalogStore.swift in Sources */,
 				B00000000000000000000025 /* ExerciseLibraryView.swift in Sources */,
 				B00000000000000000000026 /* DataSourcesView.swift in Sources */,
+				B00000000000000000000028 /* WorkoutPlanningModels.swift in Sources */,
+				B00000000000000000000029 /* TrainingProfile.swift in Sources */,
+				B00000000000000000000030 /* CuratedExerciseCatalog.swift in Sources */,
+				B00000000000000000000031 /* DailyTrainingStateBuilder.swift in Sources */,
+				B00000000000000000000032 /* FoundationModelWorkoutPersonalizer.swift in Sources */,
+				B00000000000000000000033 /* WorkoutPersonalizationRequestBuilder.swift in Sources */,
+				B00000000000000000000034 /* WorkoutPlanningEngine.swift in Sources */,
+				B00000000000000000000035 /* TodayWorkoutRecommendationView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -336,6 +377,9 @@
 				B00000000000000000000021 /* AppModelLifecycleTests.swift in Sources */,
 				B00000000000000000000024 /* ExerciseCatalogTests.swift in Sources */,
 				B00000000000000000000027 /* HealthKitServiceTests.swift in Sources */,
+				B00000000000000000000036 /* FoundationModelWorkoutPersonalizerTests.swift in Sources */,
+				B00000000000000000000037 /* WorkoutPlanningEngineTests.swift in Sources */,
+				D7A100000000000000000001 /* DailyTrainingStateBuilderTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
