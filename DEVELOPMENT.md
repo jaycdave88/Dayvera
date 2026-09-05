@@ -45,7 +45,7 @@ After installing a Debug build:
 ```sh
 xcrun simctl launch --terminate-running-process \
   <SIMULATOR-UDID> \
-  com.momoai.personalassistant.sleepcoach \
+  com.jaycdave.dayvera \
   --demo-data --skip-onboarding --tab=today
 ```
 

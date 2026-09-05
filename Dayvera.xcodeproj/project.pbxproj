@@ -560,7 +560,7 @@ B90000000000000000009999,
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.momoai.personalassistant.sleepcoach;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jaycdave.dayvera;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -597,7 +597,7 @@ B90000000000000000009999,
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.momoai.personalassistant.sleepcoach;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jaycdave.dayvera;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -621,7 +621,7 @@ B90000000000000000009999,
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.momoai.personalassistant.sleepcoach.tests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jaycdave.dayvera.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_STRICT_CONCURRENCY = minimal;
 				SWIFT_VERSION = 5.0;
@@ -643,7 +643,7 @@ B90000000000000000009999,
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.momoai.personalassistant.sleepcoach.tests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jaycdave.dayvera.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_STRICT_CONCURRENCY = minimal;
 				SWIFT_VERSION = 5.0;

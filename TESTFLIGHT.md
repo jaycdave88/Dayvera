@@ -4,7 +4,7 @@ This guide prepares Dayvera for external beta testing. It does not automate sign
 
 ## Identity and prerequisites
 
-Dayvera currently retains the bundle identifier `com.momoai.personalassistant.sleepcoach` so existing installations, HealthKit workout sync identifiers, Calendar ownership receipts, alarm ownership, and local app-container data remain continuous. Changing that identifier creates a different app identity and requires a separate migration and App Store Connect record.
+Dayvera uses the permanent App Store bundle identifier `com.jaycdave.dayvera`. Earlier local development builds used `com.momoai.personalassistant.sleepcoach`; those builds are a separate app identity and container. The first TestFlight install is therefore a clean Dayvera installation and requires fresh Health, Calendar, camera, and alarm authorization. Health data already stored in Apple Health is not deleted by this change.
 
 The checked-in candidate is marketing version **1.0**, build **2**. Increase the build number before every later upload.
 
@@ -12,7 +12,7 @@ Before archiving, the release owner needs:
 
 - active Apple Developer Program membership;
 - access to the matching identifier and signing team in Certificates, Identifiers & Profiles;
-- an App Store Connect app record named Dayvera using the retained bundle identifier;
+- an App Store Connect app record named Dayvera using `com.jaycdave.dayvera`;
 - an App Store distribution certificate and App Store provisioning profile, or working Xcode automatic signing;
 - App Store Connect access to upload builds, plus Account Holder, Admin, or App Manager access to create and manage external testing groups;
 - Xcode 27 with the iOS 27 SDK;
@@ -31,7 +31,7 @@ CI intentionally has no signing identity and cannot archive, upload, submit for 
 1. Run the complete unit/integration suite with production source and Xcode 27.
 2. Build the unsigned Release configuration to catch configuration-only failures.
 3. Install a signed Release candidate on a supported iPhone.
-4. Verify first launch and upgrade from the existing retained-bundle-ID installation.
+4. Verify a clean first launch, permissions, and state restoration; later beta builds must also upgrade the preceding TestFlight build safely.
 5. Exercise real HealthKit authorization and source attribution, Calendar destination review/write/Undo, and an approved AlarmKit wake alarm.
 6. Verify camera permission, photo-library selection, Apple Intelligence availability states, real food suggestions, catalog matching, portion editing, meal save, and manual fallback.
 7. Review Plan manual editing, optional request-scoped suggestion, before/after review, final Apply confirmation, and external-deletion receipt reconciliation.
@@ -59,7 +59,7 @@ Dayvera has no account or app-managed backend. Do not provide fictional credenti
 ## Archive and upload
 
 1. In Xcode 27, select **Any iOS Device (arm64)** and the Dayvera scheme.
-2. Confirm Release signing, retained bundle identifier, version, build number, entitlements, app icon, and launch screen.
+2. Confirm Release signing, bundle identifier `com.jaycdave.dayvera`, version, build number, entitlements, app icon, and launch screen.
 3. Choose **Product → Archive**.
 4. In Organizer, run **Validate App** and resolve every signing, entitlement, privacy, or asset issue.
 5. Choose **Distribute App → App Store Connect → Upload**.
