@@ -171,7 +171,7 @@ struct RootView: View {
                 .tabItem { Label("Plan", systemImage: "calendar.badge.clock") }
                 .tag(AppTab.plan)
             NavigationStack {
-                WorkoutsView()
+                WorkoutsView(onOpenToday: { selection = .today })
                     .navigationDestination(isPresented: $showingExerciseLibrary) {
                         ExerciseLibraryView()
                     }

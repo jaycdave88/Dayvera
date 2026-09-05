@@ -11,6 +11,7 @@ struct WorkoutsView: View {
     @Query(sort: \WorkoutTemplateRecord.createdAt) private var templates: [WorkoutTemplateRecord]
     @Query(sort: \WorkoutSessionRecord.startedAt, order: .reverse) private var sessions: [WorkoutSessionRecord]
     @State private var showingNewTemplate = false
+    @State private var showingWorkoutBuilder = false
     @State private var templateToEdit: WorkoutTemplateRecord?
     @State private var activeTemplate: WorkoutTemplateRecord?
     @State private var generatedDraftTemplate: WorkoutTemplateRecord?
@@ -20,6 +21,11 @@ struct WorkoutsView: View {
     @State private var showingDebugProgress = false
     @State private var appliedDebugRoute = false
     private let draftStore = ActiveWorkoutDraftStore()
+    let onOpenToday: () -> Void
+
+    init(onOpenToday: @escaping () -> Void = {}) {
+        self.onOpenToday = onOpenToday
+    }
 
     var body: some View {
         ScrollView {
@@ -31,6 +37,9 @@ struct WorkoutsView: View {
 
                 if activeDraft == nil, let quickStartTemplate {
                     quickStartCard(quickStartTemplate)
+                }
+                if activeDraft == nil {
+                    workoutBuilderCard
                 }
                 templateSectionHeader
 
@@ -65,6 +74,9 @@ struct WorkoutsView: View {
             }
         }
         .sheet(isPresented: $showingNewTemplate) { TemplateEditorView() }
+        .sheet(isPresented: $showingWorkoutBuilder) {
+            WorkoutBuildSheet(onBuild: onOpenToday)
+        }
         .sheet(item: $templateToEdit) { template in
             TemplateEditorView(template: template)
         }
@@ -117,6 +129,28 @@ struct WorkoutsView: View {
         .onChange(of: templates.count) { _, _ in
             loadDraftState()
             applyDebugRouteIfNeeded()
+        }
+    }
+
+    private var workoutBuilderCard: some View {
+        CoachCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Build today’s workout", systemImage: "sparkles")
+                    .font(.headline)
+                    .foregroundStyle(Color.coachIndigo)
+                Text("Answer a few questions and Dayvera will build a recovery-aware workout from your goal, equipment, training history, and hard movement exclusions.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button {
+                    showingWorkoutBuilder = true
+                } label: {
+                    Label("Build Workout", systemImage: "wand.and.stars")
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.coachIndigo)
+            }
         }
     }
 
@@ -355,6 +389,104 @@ struct WorkoutsView: View {
     private func templateForDraft(_ draft: ActiveWorkoutDraft) -> WorkoutTemplateRecord? {
         templates.first(where: { $0.id == draft.templateID })
             ?? (generatedDraftTemplate?.id == draft.templateID ? generatedDraftTemplate : nil)
+    }
+}
+
+private struct WorkoutBuildSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var appModel: AppModel
+    @State private var minutes = 45
+    @State private var focus: TrainingFocus?
+    @State private var effort: PlannedEffort = .asPlanned
+
+    let onBuild: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Picker("Goal", selection: $appModel.trainingProfile.goal) {
+                        ForEach(TrainingGoal.allCases, id: \.self) { goal in
+                            Text(goal.title).tag(goal)
+                        }
+                    }
+                    Stepper(
+                        "\(appModel.trainingProfile.targetSessionsPerWeek) workouts per week",
+                        value: $appModel.trainingProfile.targetSessionsPerWeek,
+                        in: 2...6
+                    )
+                } header: {
+                    Text("Your training")
+                } footer: {
+                    Text("Your goal and weekly target are saved for future recommendations.")
+                }
+
+                Section {
+                    Picker("Time available", selection: $minutes) {
+                        ForEach([30, 45, 60], id: \.self) { Text("\($0) min").tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    Picker("Focus", selection: $focus) {
+                        Text("Recommended").tag(Optional<TrainingFocus>.none)
+                        ForEach(TrainingFocus.allCases, id: \.self) { focus in
+                            Text(focus.title).tag(Optional(focus))
+                        }
+                    }
+                    Picker("Effort", selection: $effort) {
+                        Text("As planned").tag(PlannedEffort.asPlanned)
+                        Text("Easier today").tag(PlannedEffort.easier)
+                    }
+                    .pickerStyle(.segmented)
+                } header: {
+                    Text("Today")
+                }
+
+                Section {
+                    Picker("Training location", selection: $appModel.trainingProfile.activeEquipmentProfileID) {
+                        ForEach(appModel.trainingProfile.equipmentProfiles) { profile in
+                            Text(profile.name).tag(profile.id)
+                        }
+                    }
+                    LabeledContent("Movement exclusions") {
+                        Text("\(appModel.trainingProfile.excludedMovementPatterns.count + appModel.trainingProfile.excludedExerciseIDs.count) set")
+                            .foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text("Equipment")
+                } footer: {
+                    Text("Set exclusions in Settings › Workout Preferences. They remain hard rules; Dayvera never asks on-device AI to override them.")
+                }
+
+                Section {
+                    Toggle("Personalize valid options", isOn: $appModel.trainingProfile.onDevicePersonalizationEnabled)
+                    Text("When available, Apple Intelligence can rank already-safe options and explain the choice. The validated planner creates every exercise and prescription.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } header: {
+                    Text("Optional on-device AI")
+                }
+            }
+            .navigationTitle("Build Workout")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Build") {
+                        appModel.workoutBuildIntent = WorkoutBuildIntent(
+                            availableMinutes: minutes,
+                            focus: focus,
+                            effort: effort
+                        )
+                        dismiss()
+                        onBuild()
+                    }
+                    .fontWeight(.semibold)
+                }
+            }
+        }
+        .presentationDetents([.large])
     }
 }
 

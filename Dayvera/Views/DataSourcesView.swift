@@ -758,7 +758,9 @@ private struct SignalSourceSettingsView: View {
             sourceHealth
             dataCoverage
 
-            if !sources.isEmpty {
+            if sources.isEmpty {
+                missingDataHelp
+            } else {
                 sourceOptions
             }
 
@@ -836,6 +838,22 @@ private struct SignalSourceSettingsView: View {
                 }
                 .accessibilityElement(children: .combine)
             }
+        }
+    }
+
+    private var missingDataHelp: some View {
+        Section("No readable \(metric.title) data") {
+            Text("Dayvera has not received this signal from Apple Health. This can mean the signal is not being recorded, its source has not synced yet, or Dayvera was not allowed to read it.")
+                .font(.subheadline)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("In Health, open your profile, then Apps & Services › Dayvera and allow \(metric.title). If your watch or another app records it, confirm that app shares the signal with Apple Health, then return here and refresh.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Review Health Access", systemImage: "checklist") {
+                Task { await appModel.connectHealth() }
+            }
+            .frame(minHeight: 44)
         }
     }
 

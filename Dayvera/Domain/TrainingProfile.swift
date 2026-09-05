@@ -1,5 +1,14 @@
 import Foundation
 
+/// A one-session request from the Train tab. It is intentionally ephemeral:
+/// long-term preferences live in `TrainingProfile`, while this only shapes the
+/// next recommendation the user asks Dayvera to build.
+struct WorkoutBuildIntent: Hashable, Sendable {
+    let availableMinutes: Int
+    let focus: TrainingFocus?
+    let effort: PlannedEffort
+}
+
 // MARK: - Motivation summaries
 
 enum ReturningExperience: Equatable, Sendable {

@@ -321,6 +321,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var appliedPlanVerificationMessage: String?
     @Published private(set) var exportingWorkoutIDs: Set<UUID> = []
     @Published var notice: String?
+    @Published var workoutBuildIntent: WorkoutBuildIntent?
     @Published var preferences: WellnessPreferences {
         didSet {
             savePreferences()
