@@ -21,9 +21,11 @@ struct NutritionSetupView: View {
                         ForEach(NutritionSex.allCases) { Text($0.rawValue).tag($0) }
                     }
                     Text("The original equation uses sex-based coefficients. Use both estimates if neither is appropriate; this increases uncertainty.").font(.footnote).foregroundStyle(.secondary)
-                    numberField(draft.usesMetric ? "Height (cm)" : "Height (in)", value: Binding(
-                        get: { draft.usesMetric ? draft.heightCM : draft.heightCM / 2.54 },
-                        set: { draft.heightCM = draft.usesMetric ? $0 : $0 * 2.54 }))
+                    if draft.usesMetric {
+                        numberField("Height (cm)", value: $draft.heightCM)
+                    } else {
+                        imperialHeightFields
+                    }
                     numberField(draft.usesMetric ? "Weight (kg)" : "Weight (lb)", value: Binding(
                         get: { draft.usesMetric ? draft.weightKG : draft.weightKG / 0.45359237 },
                         set: { draft.weightKG = draft.usesMetric ? $0 : $0 * 0.45359237; draft.measurementSource = "User entered"; draft.measurementDate = .now }))
@@ -87,5 +89,48 @@ struct NutritionSetupView: View {
     }
     private func numberField(_ title: String, value: Binding<Double>) -> some View {
         HStack { Text(title); Spacer(); TextField(title, value: value, format: .number.precision(.fractionLength(0...1))).multilineTextAlignment(.trailing).keyboardType(.decimalPad).frame(maxWidth: 110) }
+    }
+
+    private var imperialHeightFields: some View {
+        HStack(spacing: 8) {
+            Text("Height")
+            Spacer()
+            TextField("Feet", value: imperialFeet, format: .number)
+                .keyboardType(.numberPad)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 42)
+                .accessibilityLabel("Height feet")
+            Text("ft").foregroundStyle(.secondary)
+            TextField("Inches", value: imperialInches, format: .number)
+                .keyboardType(.numberPad)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 42)
+                .accessibilityLabel("Height inches")
+            Text("in").foregroundStyle(.secondary)
+        }
+    }
+
+    private var imperialFeet: Binding<Int> {
+        Binding(
+            get: { totalImperialInches / 12 },
+            set: { feet in
+                let inches = totalImperialInches % 12
+                draft.heightCM = Double(max(feet, 0) * 12 + inches) * 2.54
+            }
+        )
+    }
+
+    private var imperialInches: Binding<Int> {
+        Binding(
+            get: { totalImperialInches % 12 },
+            set: { inches in
+                let feet = totalImperialInches / 12
+                draft.heightCM = Double(feet * 12 + min(max(inches, 0), 11)) * 2.54
+            }
+        )
+    }
+
+    private var totalImperialInches: Int {
+        max(Int((draft.heightCM / 2.54).rounded()), 0)
     }
 }
