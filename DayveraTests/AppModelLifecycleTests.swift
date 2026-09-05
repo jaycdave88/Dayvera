@@ -376,6 +376,55 @@ final class AppModelLifecycleTests: XCTestCase {
         XCTAssertNil(store.data(forKey: "testState"))
     }
 
+    func testMeaningfulUseAndMotivationReceiptsUseInjectedPrivateStore() {
+        let privateState = MockPrivateAppStateStore()
+        let model = AppModel(
+            health: MockHealthService(),
+            calendar: MockCalendarService(),
+            alarms: MockAlarmService(),
+            privateStateStore: privateState,
+            demoMode: true
+        )
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let previousUse = calendar.date(from: DateComponents(year: 2026, month: 8, day: 20, hour: 18))!
+        let now = calendar.date(from: DateComponents(year: 2026, month: 9, day: 5, hour: 8))!
+
+        XCTAssertEqual(model.returningExperience(now: now, calendar: calendar), .none)
+        XCTAssertTrue(model.recordMeaningfulUse(at: previousUse))
+        XCTAssertEqual(model.returningExperience(now: now, calendar: calendar), .welcomeBack)
+
+        XCTAssertFalse(model.hasAcknowledgedMotivationReceipt("training-week-2026-09-01"))
+        XCTAssertTrue(model.acknowledgeMotivationReceipt("training-week-2026-09-01"))
+        XCTAssertTrue(model.hasAcknowledgedMotivationReceipt("training-week-2026-09-01"))
+
+        let reloaded = AppModel(
+            health: MockHealthService(),
+            calendar: MockCalendarService(),
+            alarms: MockAlarmService(),
+            privateStateStore: privateState,
+            demoMode: true
+        )
+        XCTAssertEqual(reloaded.returningExperience(now: now, calendar: calendar), .welcomeBack)
+        XCTAssertTrue(reloaded.hasAcknowledgedMotivationReceipt("training-week-2026-09-01"))
+    }
+
+    func testFailedPrivateWriteDoesNotClaimMotivationReceiptWasSaved() {
+        let privateState = MockPrivateAppStateStore()
+        privateState.failWrites = true
+        let model = AppModel(
+            health: MockHealthService(),
+            calendar: MockCalendarService(),
+            alarms: MockAlarmService(),
+            privateStateStore: privateState,
+            demoMode: true
+        )
+
+        XCTAssertFalse(model.recordMeaningfulUse(at: .now))
+        XCTAssertFalse(model.acknowledgeMotivationReceipt("training-week"))
+        XCTAssertFalse(model.hasAcknowledgedMotivationReceipt("training-week"))
+    }
+
     func testApplyStopsBeforeSystemWritesWhenPrivateJournalCannotBeSaved() async {
         let (defaults, suiteName) = makeDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }

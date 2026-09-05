@@ -15,6 +15,8 @@ private enum AppTab: String, Hashable {
         if arguments.contains(where: { $0.hasPrefix("--show-exercise=") }) {
             return .train
         }
+        if arguments.contains("--show-nutrition-progress") { return .progress }
+        if arguments.contains("--show-meal-history") { return .nutrition }
         if arguments.contains(where: { $0.hasPrefix("--show-nutrition-") }) { return .nutrition }
         if arguments.contains("--show-recovery-progress") {
             return .progress
@@ -23,11 +25,13 @@ private enum AppTab: String, Hashable {
             [
                 "--show-template-editor",
                 "--show-template-library",
-                "--show-active-workout"
+                "--show-active-workout",
+                "--show-workout-builder"
             ].contains($0)
         }) {
             return .train
         }
+        if arguments.contains("--show-plan-editor") { return .plan }
         if arguments.contains("--show-progress") {
             return .progress
         }
@@ -95,6 +99,9 @@ private enum LaunchDestination {
 
     static var progressSection: ProgressSection {
         #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--show-nutrition-progress") {
+            return .nutrition
+        }
         if ProcessInfo.processInfo.arguments.contains("--show-progress") {
             return .training
         }
@@ -109,6 +116,7 @@ struct RootView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("hasCompletedGuidedSetup") private var hasCompletedGuidedSetup = false
+    @AppStorage("appearancePreference") private var appearanceRawValue = AppAppearance.system.rawValue
     @State private var selection = AppTab.launchSelection
     @State private var showingSettings = LaunchDestination.showsSettings
     @State private var showingDataSources = false
@@ -117,17 +125,19 @@ struct RootView: View {
     @State private var pendingCalendarSetup = LaunchDestination.showsCalendarSetup
     @State private var showingExerciseLibrary = LaunchDestination.showsExerciseLibrary
     @State private var progressSection = LaunchDestination.progressSection
+    @State private var progressNavigationID = UUID()
+    @State private var returningExperience: ReturningExperience = .none
+    @State private var evaluatedReturningExperience = false
 
     var body: some View {
         TabView(selection: $selection) {
             NavigationStack {
                 DashboardView(
-                    onOpenTrain: { selection = .train },
-                    onOpenPlan: { selection = .plan },
-                    onOpenRecoveryTrends: {
-                        progressSection = .recovery
-                        selection = .progress
-                    },
+                    returningExperience: returningExperience,
+                    onOpenTrain: { selectTab(.train) },
+                    onOpenPlan: { selectTab(.plan) },
+                    onOpenNutrition: { selectTab(.nutrition) },
+                    onOpenRecoveryTrends: { openProgress(.recovery) },
                     onOpenDataSources: {
                         selection = .today
                         pendingDataSources = true
@@ -168,21 +178,28 @@ struct RootView: View {
                 .tabItem { Label("Plan", systemImage: "calendar.badge.clock") }
                 .tag(AppTab.plan)
             NavigationStack {
-                WorkoutsView()
+                WorkoutsView(
+                    onOpenToday: { selectTab(.today) },
+                    onOpenTrainingProgress: { openProgress(.training) }
+                )
                     .navigationDestination(isPresented: $showingExerciseLibrary) {
                         ExerciseLibraryView()
                     }
             }
                 .tabItem { Label("Train", systemImage: "figure.strengthtraining.traditional") }
                 .tag(AppTab.train)
-            NavigationStack { NutritionView() }
+            NavigationStack {
+                NutritionView(onOpenProgress: { openProgress(.nutrition) })
+            }
                 .tabItem { Label("Nutrition", systemImage: "leaf.fill") }
                 .tag(AppTab.nutrition)
             NavigationStack { ProgressView(section: $progressSection) }
+                .id(progressNavigationID)
                 .tabItem { Label("Progress", systemImage: "chart.xyaxis.line") }
                 .tag(AppTab.progress)
         }
         .tint(Color.coachIndigo)
+        .preferredColorScheme(AppAppearance(rawValue: appearanceRawValue)?.colorScheme)
         .fullScreenCover(isPresented: onboardingPresentation) {
             GuidedSetupView {
                 hasCompletedGuidedSetup = true
@@ -190,6 +207,10 @@ struct RootView: View {
             .interactiveDismissDisabled()
         }
         .task {
+            if !evaluatedReturningExperience {
+                evaluatedReturningExperience = true
+                returningExperience = appModel.returningExperience()
+            }
             nutrition.attach(modelContext)
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--demo-data") {
@@ -208,10 +229,20 @@ struct RootView: View {
                 await appModel.applyPlan()
             }
             #endif
+            if hasCompletedGuidedSetup {
+                appModel.recordMeaningfulUse()
+            }
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
+                returningExperience = appModel.returningExperience()
+                evaluatedReturningExperience = true
+                if hasCompletedGuidedSetup {
+                    appModel.recordMeaningfulUse()
+                }
                 Task { await appModel.refreshForForeground(); nutrition.updateHealthContext(appModel.snapshot); await nutrition.refreshHealth() }
+            } else if (phase == .inactive || phase == .background), hasCompletedGuidedSetup {
+                appModel.recordMeaningfulUse()
             }
         }
         .onChange(of: appModel.snapshot.generatedAt) { _, _ in nutrition.updateHealthContext(appModel.snapshot) }
@@ -244,6 +275,16 @@ struct RootView: View {
                 if !isPresented { hasCompletedGuidedSetup = true }
             }
         )
+    }
+
+    private func selectTab(_ tab: AppTab) {
+        selection = tab
+    }
+
+    private func openProgress(_ section: ProgressSection) {
+        progressSection = section
+        progressNavigationID = UUID()
+        selection = .progress
     }
 }
 

@@ -111,12 +111,121 @@ struct CatalogFood: Codable, Identifiable, Sendable {
 struct FoodEntry: Codable, Identifiable, Equatable {
     var id = UUID()
     var name: String
+    /// User-facing quantity. `grams` remains the canonical amount used for nutrient math.
+    var amount: Double
+    var unit: String
+    var count: Double
+    var gramsPerUnit: Double
     var grams: Double
     var nutrients: NutritionAmounts
     var catalogID: String?
     var catalogVersion: String?
     var provenance: FoodProvenance
     var portionNote: String = ""
+
+    init(id: UUID = UUID(), name: String, grams: Double, nutrients: NutritionAmounts,
+         catalogID: String? = nil, catalogVersion: String? = nil, provenance: FoodProvenance,
+         portionNote: String = "", amount: Double? = nil, unit: String = "g",
+         count: Double = 1, gramsPerUnit: Double? = nil) {
+        self.id = id
+        self.name = name
+        self.grams = grams
+        self.nutrients = nutrients
+        self.catalogID = catalogID
+        self.catalogVersion = catalogVersion
+        self.provenance = provenance
+        self.portionNote = portionNote
+        let resolvedAmount = amount ?? (unit == "g" ? grams : 1)
+        self.amount = resolvedAmount
+        self.unit = unit
+        self.count = count
+        self.gramsPerUnit = gramsPerUnit ?? (unit == "g" ? 1 : grams / max(resolvedAmount * count, 0.000_001))
+    }
+
+    var quantityDescription: String {
+        let value = amount.formatted(.number.precision(.fractionLength(0...2)))
+        let multiplier = count == 1 ? "" : " × \(count.formatted(.number.precision(.fractionLength(0...2))))"
+        return "\(value) \(unit)\(multiplier)"
+    }
+
+    var quantityIsValid: Bool {
+        let derivedGrams = amount * count * gramsPerUnit
+        return amount.isFinite && amount > 0 && count.isFinite && count > 0 && gramsPerUnit.isFinite && gramsPerUnit > 0 &&
+        grams.isFinite && (0.1...10_000).contains(grams) && !unit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        abs(derivedGrams - grams) <= max(0.01, grams * 0.001)
+    }
+
+    mutating func updateQuantity(amount: Double, unit: String, count: Double, gramsPerUnit: Double) {
+        let updatedGrams = amount * count * gramsPerUnit
+        if grams > 0, updatedGrams.isFinite, updatedGrams > 0 {
+            nutrients = nutrients.scaled(updatedGrams / grams)
+        }
+        self.amount = amount
+        self.unit = unit
+        self.count = count
+        self.gramsPerUnit = gramsPerUnit
+        grams = updatedGrams
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, amount, unit, count, gramsPerUnit, grams, nutrients, catalogID, catalogVersion, provenance, portionNote
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try values.decode(String.self, forKey: .name)
+        grams = try values.decode(Double.self, forKey: .grams)
+        nutrients = try values.decode(NutritionAmounts.self, forKey: .nutrients)
+        catalogID = try values.decodeIfPresent(String.self, forKey: .catalogID)
+        catalogVersion = try values.decodeIfPresent(String.self, forKey: .catalogVersion)
+        provenance = try values.decode(FoodProvenance.self, forKey: .provenance)
+        portionNote = try values.decodeIfPresent(String.self, forKey: .portionNote) ?? ""
+        let decodedAmount = try values.decodeIfPresent(Double.self, forKey: .amount)
+        let decodedUnit = try values.decodeIfPresent(String.self, forKey: .unit)
+        let decodedCount = try values.decodeIfPresent(Double.self, forKey: .count)
+        let decodedGramsPerUnit = try values.decodeIfPresent(Double.self, forKey: .gramsPerUnit)
+        if let decodedAmount, let decodedUnit, let decodedCount, let decodedGramsPerUnit,
+           decodedAmount.isFinite, decodedAmount > 0, decodedCount.isFinite, decodedCount > 0,
+           decodedGramsPerUnit.isFinite, decodedGramsPerUnit > 0,
+           !decodedUnit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           abs(decodedAmount * decodedCount * decodedGramsPerUnit - grams) <= max(0.01, grams * 0.001) {
+            amount = decodedAmount
+            unit = decodedUnit
+            count = decodedCount
+            gramsPerUnit = decodedGramsPerUnit
+        } else {
+            // Legacy and partially written entries remain usable because their canonical grams and nutrient snapshot are authoritative.
+            amount = grams
+            unit = "g"
+            count = 1
+            gramsPerUnit = 1
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(id, forKey: .id)
+        try values.encode(name, forKey: .name)
+        try values.encode(amount, forKey: .amount)
+        try values.encode(unit, forKey: .unit)
+        try values.encode(count, forKey: .count)
+        try values.encode(gramsPerUnit, forKey: .gramsPerUnit)
+        try values.encode(grams, forKey: .grams)
+        try values.encode(nutrients, forKey: .nutrients)
+        try values.encodeIfPresent(catalogID, forKey: .catalogID)
+        try values.encodeIfPresent(catalogVersion, forKey: .catalogVersion)
+        try values.encode(provenance, forKey: .provenance)
+        try values.encode(portionNote, forKey: .portionNote)
+    }
+}
+
+struct MealSaveResult: Equatable {
+    let mealID: UUID
+    let date: Date
+    let dayKey: String
+    let total: NutritionAmounts
+    let created: Bool
 }
 
 struct NutritionIntake: Equatable {

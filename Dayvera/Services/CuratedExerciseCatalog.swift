@@ -196,3 +196,165 @@ private extension Optional where Wrapped == Set<EquipmentID> {
         self ?? fallback()
     }
 }
+
+// MARK: - Reviewed guided sessions
+
+struct GuidedWorkoutPlan: Identifiable, Hashable, Sendable {
+    let id: UUID
+    let modality: TrainingModality
+    let title: String
+    let expectedDurationMinutes: Int
+    let exercises: [WorkoutExercise]
+    let rationale: String
+
+    init(
+        id: UUID = UUID(),
+        modality: TrainingModality,
+        title: String,
+        expectedDurationMinutes: Int,
+        exercises: [WorkoutExercise],
+        rationale: String
+    ) {
+        self.id = id
+        self.modality = modality
+        self.title = title
+        self.expectedDurationMinutes = expectedDurationMinutes
+        self.exercises = exercises
+        self.rationale = rationale
+    }
+}
+
+enum GuidedWorkoutPlanningError: LocalizedError, Equatable {
+    case unsupportedEquipment
+
+    var errorDescription: String? {
+        "The selected equipment cannot build this workout. Add compatible equipment or choose another workout type."
+    }
+}
+
+/// A small reviewed catalog for modalities the strength-only RepDB source does
+/// not cover. It produces transparent, time-bounded sessions and never asks a
+/// language model to invent movements or intensity.
+struct GuidedWorkoutPlanner {
+    func build(
+        modality: TrainingModality,
+        minutes: Int,
+        equipment: Set<EquipmentID>,
+        level: WorkoutExperienceLevel,
+        effort: PlannedEffort
+    ) throws -> GuidedWorkoutPlan {
+        let boundedMinutes = min(max(minutes, 15), 90)
+        let available = equipment.union([.bodyweight])
+        switch modality {
+        case .cardio:
+            return cardio(minutes: boundedMinutes, equipment: available, level: level, effort: effort)
+        case .balance:
+            return balance(minutes: boundedMinutes, equipment: available, level: level)
+        case .flexibilityMobility:
+            return mobility(minutes: boundedMinutes, equipment: available, level: level)
+        case .strengthResistance:
+            throw GuidedWorkoutPlanningError.unsupportedEquipment
+        }
+    }
+
+    private func cardio(
+        minutes: Int,
+        equipment: Set<EquipmentID>,
+        level: WorkoutExperienceLevel,
+        effort: PlannedEffort
+    ) -> GuidedWorkoutPlan {
+        let mode = equipment.contains(.cardioMachine) ? "Cardio Machine" : "Brisk Walk"
+        let warmup = max(4, minutes / 6)
+        let cooldown = max(3, minutes / 8)
+        let work = max(minutes - warmup - cooldown, 5)
+        let intensity = effort == .easier
+            ? "Easy conversational pace"
+            : (level == .beginner ? "Comfortable talk-test pace" : "Moderate; short phrases remain comfortable")
+        return GuidedWorkoutPlan(
+            modality: .cardio,
+            title: "Cardio Session",
+            expectedDurationMinutes: warmup + work + cooldown,
+            exercises: [
+                step("Easy Warm-Up", modality: .cardio, minutes: warmup, intensity: "Very easy", cue: "Increase your pace gradually."),
+                step(mode, modality: .cardio, minutes: work, intensity: intensity, cue: "Slow down if you feel pain, dizziness, or unusual shortness of breath.", equipment: equipment.contains(.cardioMachine) ? "Cardio Machine" : "Bodyweight"),
+                step("Easy Cooldown", modality: .cardio, minutes: cooldown, intensity: "Very easy", cue: "Let breathing return toward normal gradually.")
+            ],
+            rationale: "A \(minutes)-minute session using \(mode.lowercased()) and a talk-test intensity you can adjust in real time."
+        )
+    }
+
+    private func balance(
+        minutes: Int,
+        equipment: Set<EquipmentID>,
+        level: WorkoutExperienceLevel
+    ) -> GuidedWorkoutPlan {
+        let supported = equipment.contains(.bodyweight)
+        guard supported else {
+            return GuidedWorkoutPlan(modality: .balance, title: "Balance Practice", expectedDurationMinutes: minutes, exercises: [], rationale: "Bodyweight support is required.")
+        }
+        let movements: [(String, String)] = [
+            ("Supported Single-Leg Stand", "Keep a stable support within reach."),
+            ("Heel-to-Toe Walk", "Move slowly and use a wall when needed."),
+            ("Clock Reach", "Keep the standing knee soft and shorten the reach to stay controlled."),
+            (level == .advanced ? "Single-Leg Hinge Reach" : "Weight Shift", "Stop before balance or form breaks down.")
+        ]
+        let each = max((minutes * 60) / movements.count, 60)
+        return GuidedWorkoutPlan(
+            modality: .balance,
+            title: "Balance Practice",
+            expectedDurationMinutes: minutes,
+            exercises: movements.map { step($0.0, modality: .balance, seconds: each, intensity: "Controlled", cue: $0.1) },
+            rationale: "A supported balance session matched to the \(level.title.lowercased()) level. Quality and control matter more than difficulty."
+        )
+    }
+
+    private func mobility(
+        minutes: Int,
+        equipment: Set<EquipmentID>,
+        level: WorkoutExperienceLevel
+    ) -> GuidedWorkoutPlan {
+        var movements: [(String, String)] = [
+            ("Cat-Cow", "Move slowly with your breath."),
+            ("Half-Kneeling Hip Flexor Mobilization", "Keep the pelvis controlled; avoid forcing range."),
+            ("Open Book Rotation", "Let the upper back rotate without forcing the shoulder."),
+            ("Ankle Rock", "Keep the heel down and use a pain-free range."),
+            ("Child’s Pose Reach", "Breathe comfortably and stop if the position causes pain.")
+        ]
+        if equipment.contains(.resistanceBand) {
+            movements[4] = ("Band Shoulder Pass-Through", "Use a wide grip and stay in a pain-free range.")
+        }
+        let each = max((minutes * 60) / movements.count, 60)
+        return GuidedWorkoutPlan(
+            modality: .flexibilityMobility,
+            title: "Full-Body Mobility",
+            expectedDurationMinutes: minutes,
+            exercises: movements.map { step($0.0, modality: .flexibilityMobility, seconds: each, intensity: level == .advanced ? "Controlled full range" : "Gentle range", cue: $0.1) },
+            rationale: "A whole-body mobility session using controlled, pain-free movement rather than forced stretching."
+        )
+    }
+
+    private func step(
+        _ name: String,
+        modality: TrainingModality,
+        minutes: Int? = nil,
+        seconds: Int? = nil,
+        intensity: String,
+        cue: String,
+        equipment: String = "Bodyweight"
+    ) -> WorkoutExercise {
+        WorkoutExercise(
+            equipment: equipment,
+            name: name,
+            muscleGroup: .fullBody,
+            workingSets: 1,
+            targetReps: 1,
+            targetWeight: 0,
+            targetRPE: 0,
+            restSeconds: 0,
+            modalityRaw: modality.rawValue,
+            durationSeconds: seconds ?? (minutes ?? 1) * 60,
+            intensityCue: intensity,
+            coachingCue: cue
+        )
+    }
+}

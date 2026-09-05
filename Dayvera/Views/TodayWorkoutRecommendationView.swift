@@ -48,7 +48,13 @@ struct TodayWorkoutRecommendationView: View {
                 unavailableCard
             }
         }
-        .task { await catalogStore.load() }
+        .task {
+            await catalogStore.load()
+            applyWorkoutBuildIntent()
+        }
+        .onChange(of: appModel.workoutBuildIntent) { _, _ in
+            applyWorkoutBuildIntent()
+        }
         .task(id: recommendationInput) { await prepareRecommendation() }
         .sheet(isPresented: $showingAdjustments) {
             WorkoutAdjustmentSheet(
@@ -357,6 +363,14 @@ struct TodayWorkoutRecommendationView: View {
             catalogExerciseCount: catalogStore.exercises.count,
             catalogLoadedAt: catalogStore.loadedAt
         )
+    }
+
+    private func applyWorkoutBuildIntent() {
+        guard let intent = appModel.workoutBuildIntent else { return }
+        availableMinutes = intent.availableMinutes
+        preferredFocus = intent.focus
+        plannedEffort = intent.effort
+        appModel.workoutBuildIntent = nil
     }
 
     private var enabledRecoveryMetrics: Set<MetricKind> {

@@ -15,14 +15,8 @@ struct DataSourcesView: View {
             if !appModel.healthQueryFailures.isEmpty {
                 queryIssues
             }
-
-            safetyChecks
-            trainingContext
-            bodyCompositionContext
-            providerMatrix
-            observedCoverage
-            observedSources
             confidenceExplanation
+            diagnosticsLink
         }
         .navigationTitle("Health Data & Sources")
         .navigationBarTitleDisplayMode(.inline)
@@ -163,15 +157,12 @@ struct DataSourcesView: View {
                     Text("This signal could not be updated. Refresh, then review its sharing permission in Apple Health if the problem continues.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    DisclosureGroup("Technical details") {
-                        Text(failure.message)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text(failure.typeIdentifier)
-                            .font(.caption2.monospaced())
-                            .foregroundStyle(.tertiary)
+                    NavigationLink {
+                        DataDiagnosticsView()
+                    } label: {
+                        Text("View in Data Diagnostics")
                     }
-                    .font(.caption)
+                    .font(.caption.weight(.semibold))
                 }
                 .padding(.vertical, 3)
             }
@@ -364,6 +355,26 @@ struct DataSourcesView: View {
         }
     }
 
+    private var diagnosticsLink: some View {
+        Section {
+            NavigationLink {
+                DataDiagnosticsView()
+            } label: {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("Data Diagnostics", systemImage: "stethoscope")
+                        .font(.headline)
+                    Text("Query failures, raw sources, coverage, and safety-only checks")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.vertical, 3)
+            }
+        } footer: {
+            Text("Technical details are separated from everyday source and guidance controls.")
+        }
+    }
+
     private var safetyEffectText: String {
         let gate = appModel.snapshot.safetyGate
         if gate.capsReadinessAtModerate {
@@ -474,6 +485,224 @@ struct DataSourcesView: View {
     }
 }
 
+private struct DataDiagnosticsView: View {
+    @EnvironmentObject private var appModel: AppModel
+
+    var body: some View {
+        Form {
+            if !appModel.healthQueryFailures.isEmpty {
+                Section("Query failures") {
+                    ForEach(appModel.healthQueryFailures) { failure in
+                        VStack(alignment: .leading, spacing: 5) {
+                            Label(
+                                failure.kind?.title ?? "Apple Health data",
+                                systemImage: "exclamationmark.triangle.fill"
+                            )
+                            .font(.headline)
+                            Text(failure.message)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                            Text(failure.typeIdentifier)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.tertiary)
+                                .textSelection(.enabled)
+                        }
+                        .padding(.vertical, 3)
+                    }
+                }
+            }
+
+            Section {
+                ForEach(appModel.snapshot.safetyGate.signals) { signal in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Label(signal.kind.title, systemImage: signal.kind.signalSymbol)
+                                .font(.subheadline.weight(.semibold))
+                            Spacer()
+                            Text(signal.state == .outlier ? "Check" : "Neutral")
+                                .font(.caption.weight(.semibold))
+                        }
+                        Text(signal.statusText)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if let sourceName = signal.sourceName {
+                            Text("Source: \(sourceName)")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            } header: {
+                Text("Safety-only checks")
+            } footer: {
+                Text("These checks can limit a recommendation but never diagnose a condition or raise readiness.")
+            }
+
+            Section("Observed coverage") {
+                ForEach(HealthKitService.observedCoverage(from: appModel.snapshot.samples)) { coverage in
+                    MetricCoverageRow(coverage: coverage)
+                }
+            }
+
+            trainingContext
+            bodyCompositionContext
+            providerMatrix
+
+            Section {
+                if appModel.diagnostics.isEmpty {
+                    Text("No readable samples observed")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(appModel.diagnostics) { item in
+                        SourceObservationRow(
+                            diagnostic: item,
+                            usedNow: selectedSourceBundle(for: item.kind) == item.bundleIdentifier
+                        )
+                    }
+                }
+            } header: {
+                Text("Raw sources")
+            } footer: {
+                Text("Identifiers describe provenance. They are not sensor-accuracy or permission-status scores.")
+            }
+        }
+        .navigationTitle("Data Diagnostics")
+        .navigationBarTitleDisplayMode(.inline)
+        .refreshable { await appModel.refresh() }
+    }
+
+    private func selectedSourceBundle(for metric: MetricKind) -> String? {
+        if let safety = appModel.snapshot.safetyGate.signals.first(where: { $0.kind == metric }) {
+            return safety.sourceBundleIdentifier
+        }
+        return switch metric {
+        case .sleep: appModel.snapshot.sleepTrend.sourceBundleIdentifier
+        case .heartRateVariability: appModel.snapshot.hrvTrend.sourceBundleIdentifier
+        case .restingHeartRate: appModel.snapshot.restingHeartRateTrend.sourceBundleIdentifier
+        default: nil
+        }
+    }
+
+    private var trainingContext: some View {
+        let context = appModel.snapshot.trainingContext
+        return Section {
+            DataValueRow(
+                label: "Yesterday’s active energy",
+                value: observedValue(context.previousDayActiveEnergy, unit: MetricKind.activeEnergy.unit)
+            )
+            DataValueRow(
+                label: "Yesterday’s exercise",
+                value: observedValue(context.previousDayExerciseMinutes, unit: MetricKind.exerciseMinutes.unit)
+            )
+            DataValueRow(
+                label: "Yesterday’s steps",
+                value: observedValue(context.previousDaySteps, unit: MetricKind.steps.unit)
+            )
+            DataValueRow(
+                label: "Workouts · last 7 days",
+                value: context.workoutsLastSevenDays == 0
+                    ? "No samples observed"
+                    : "\(context.workoutsLastSevenDays)"
+            )
+            DataValueRow(
+                label: "Workout time · last 7 days",
+                value: observedValue(context.workoutMinutesLastSevenDays, unit: MetricKind.workout.unit)
+            )
+        } header: {
+            Text("Training context")
+        } footer: {
+            Text("Activity records provide context only; they are not folded into a proprietary recovery score.")
+        }
+    }
+
+    private var bodyCompositionContext: some View {
+        Section {
+            ForEach(MetricKind.bodyCompositionMetrics, id: \.self) { metric in
+                let sample = latestObservedSample(for: metric)
+                VStack(alignment: .leading, spacing: 3) {
+                    DataValueRow(
+                        label: metric.title,
+                        value: bodyCompositionValue(sample, kind: metric)
+                    )
+                    if let sample {
+                        Text("Latest observed from \(sample.sourceName)")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+        } header: {
+            Text("Body composition context")
+        } footer: {
+            Text("These observed measurements provide progress context only and never change readiness, safety checks, or today’s workout.")
+        }
+    }
+
+    private var providerMatrix: some View {
+        Section {
+            ForEach(providerSummaries) { summary in
+                ProviderObservationRow(summary: summary)
+            }
+        } header: {
+            Text("Provider observations")
+        } footer: {
+            Text("These rows report only samples observed in Apple Health. Not received does not establish device support, sensor availability, or denied access.")
+        }
+    }
+
+    private var providerSummaries: [ProviderObservationSummary] {
+        let definitions: [(name: String, terms: [String])] = [
+            ("Eight Sleep", ["eight"]),
+            ("Hume", ["hume", "fittrack"]),
+            ("Apple Watch", ["apple watch", "watch"])
+        ]
+        return definitions.map { definition in
+            let matches = appModel.diagnostics.filter { diagnostic in
+                let deviceText = diagnostic.devices.flatMap {
+                    [$0.manufacturer, $0.model].compactMap { $0 }
+                }.joined(separator: " ")
+                let searchable = [
+                    diagnostic.sourceName,
+                    diagnostic.bundleIdentifier,
+                    diagnostic.sourceProductType,
+                    deviceText
+                ].compactMap { $0 }.joined(separator: " ").lowercased()
+                return definition.terms.contains { searchable.contains($0) }
+            }
+            return ProviderObservationSummary(
+                name: definition.name,
+                sampleCount: matches.reduce(0) { $0 + $1.sampleCount },
+                metrics: MetricKind.healthReadMetrics.filter(Set(matches.map(\.kind)).contains),
+                latestSample: matches.compactMap(\.latestSample).max(),
+                referenceDate: appModel.snapshot.generatedAt
+            )
+        }
+    }
+
+    private func observedValue(_ value: Double?, unit: String) -> String {
+        guard let value else { return "No samples observed" }
+        return "\(value.formatted(.number.precision(.fractionLength(0...1)))) \(unit)"
+    }
+
+    private func latestObservedSample(for kind: MetricKind) -> MetricSample? {
+        appModel.snapshot.samples
+            .filter { $0.kind == kind && !$0.wasUserEntered && $0.value != nil }
+            .max { $0.endDate < $1.endDate }
+    }
+
+    private func bodyCompositionValue(_ sample: MetricSample?, kind: MetricKind) -> String {
+        guard let value = sample?.value else { return "No samples observed" }
+        return bodyCompositionDisplayValue(
+            value: value,
+            kind: kind,
+            loadUnit: appModel.trainingProfile.loadUnit
+        )
+    }
+}
+
 private struct SignalControlRow: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let preference: DecisionMetricPreference
@@ -529,7 +758,9 @@ private struct SignalSourceSettingsView: View {
             sourceHealth
             dataCoverage
 
-            if !sources.isEmpty {
+            if sources.isEmpty {
+                missingDataHelp
+            } else {
                 sourceOptions
             }
 
@@ -607,6 +838,22 @@ private struct SignalSourceSettingsView: View {
                 }
                 .accessibilityElement(children: .combine)
             }
+        }
+    }
+
+    private var missingDataHelp: some View {
+        Section("No readable \(metric.title) data") {
+            Text("Dayvera has not received this signal from Apple Health. This can mean the signal is not being recorded, its source has not synced yet, or Dayvera was not allowed to read it.")
+                .font(.subheadline)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("In Health, open your profile, then Apps & Services › Dayvera and allow \(metric.title). If your watch or another app records it, confirm that app shares the signal with Apple Health, then return here and refresh.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Review Health Access", systemImage: "checklist") {
+                Task { await appModel.connectHealth() }
+            }
+            .frame(minHeight: 44)
         }
     }
 

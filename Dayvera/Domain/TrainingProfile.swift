@@ -1,6 +1,162 @@
 import Foundation
 
+/// A one-session request from the Train tab. It is intentionally ephemeral:
+/// long-term preferences live in `TrainingProfile`, while this only shapes the
+/// next recommendation the user asks Dayvera to build.
+struct WorkoutBuildIntent: Hashable, Sendable {
+    let modality: TrainingModality
+    let availableMinutes: Int
+    let focus: TrainingFocus?
+    let effort: PlannedEffort
+    let equipment: Set<EquipmentID>
+    let level: WorkoutExperienceLevel
+}
+
+/// The kind of session the user wants to build. Strength-specific programming
+/// preferences remain separate so these choices do not pretend that cardio,
+/// balance, and mobility use interchangeable prescriptions.
+enum TrainingModality: String, Codable, CaseIterable, Identifiable, Hashable, Sendable {
+    case cardio
+    case strengthResistance
+    case balance
+    case flexibilityMobility
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .cardio: "Cardio"
+        case .strengthResistance: "Strength / Resistance"
+        case .balance: "Balance"
+        case .flexibilityMobility: "Flexibility & Mobility"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .cardio: "heart.circle.fill"
+        case .strengthResistance: "figure.strengthtraining.traditional"
+        case .balance: "figure.mind.and.body"
+        case .flexibilityMobility: "figure.flexibility"
+        }
+    }
+}
+
+enum WorkoutExperienceLevel: String, Codable, CaseIterable, Identifiable, Hashable, Sendable {
+    case beginner
+    case intermediate
+    case advanced
+
+    var id: String { rawValue }
+    var title: String { rawValue.capitalized }
+}
+
+// MARK: - Motivation summaries
+
+enum ReturningExperience: Equatable, Sendable {
+    case none
+    case welcomeBack
+    case trendsNeedData
+
+    static func classify(
+        previousUse: Date?,
+        now: Date = .now,
+        calendar: Calendar = .current
+    ) -> ReturningExperience {
+        guard let previousUse else { return .none }
+        let previousDay = calendar.startOfDay(for: previousUse)
+        let currentDay = calendar.startOfDay(for: now)
+        guard previousDay <= currentDay,
+              let days = calendar.dateComponents([.day], from: previousDay, to: currentDay).day,
+              days >= 7 else { return .none }
+        return days >= 30 ? .trendsNeedData : .welcomeBack
+    }
+}
+
+struct WeeklyRhythm: Equatable, Sendable {
+    let weekStart: Date
+    let trainingCompleted: Int
+    let trainingTarget: Int
+    let completeNutritionDays: Int
+    let recoveryNightsRecorded: Int
+    let recoveryEligibleNights: Int
+    let completedTrainingWeeksInLastFour: Int
+
+    var trainingProgress: Double {
+        min(Double(trainingCompleted) / Double(max(trainingTarget, 1)), 1)
+    }
+
+    var nutritionProgress: Double {
+        min(Double(completeNutritionDays) / 7, 1)
+    }
+
+    var recoveryProgress: Double {
+        min(Double(recoveryNightsRecorded) / Double(max(recoveryEligibleNights, 1)), 1)
+    }
+
+    var trainingPlanMet: Bool { trainingCompleted >= trainingTarget }
+
+    var momentumText: String? {
+        guard completedTrainingWeeksInLastFour > 0 else { return nil }
+        return "Training met your plan in \(completedTrainingWeeksInLastFour) of the last 4 completed weeks."
+    }
+}
+
+enum WeeklyRhythmEngine {
+    static func summary(
+        now: Date = .now,
+        calendar suppliedCalendar: Calendar = .current,
+        sessionDates: [Date],
+        trainingTarget: Int,
+        completedNutritionDayKeys: Set<String>,
+        recoveryDates: [Date]
+    ) -> WeeklyRhythm {
+        let calendar = suppliedCalendar
+        let week = calendar.dateInterval(of: .weekOfYear, for: now)
+            ?? DateInterval(start: calendar.startOfDay(for: now), duration: 7 * 86_400)
+
+        let completedSessions = sessionDates.filter { week.contains($0) && $0 <= now }.count
+        let recoveryDays = uniqueDays(recoveryDates.filter { week.contains($0) && $0 <= now }, calendar: calendar)
+        let eligibleDates = dates(in: week, calendar: calendar).filter { $0 <= now }
+        let nutritionDays = eligibleDates.filter {
+            $0 <= now && completedNutritionDayKeys.contains(dayKey($0, calendar: calendar))
+        }.count
+
+        let completedPriorWeeks = (1...4).filter { offset in
+            guard let anchor = calendar.date(byAdding: .weekOfYear, value: -offset, to: week.start),
+                  let interval = calendar.dateInterval(of: .weekOfYear, for: anchor) else { return false }
+            return sessionDates.filter { interval.contains($0) && $0 <= now }.count >= max(trainingTarget, 1)
+        }.count
+
+        return WeeklyRhythm(
+            weekStart: week.start,
+            trainingCompleted: completedSessions,
+            trainingTarget: max(trainingTarget, 1),
+            completeNutritionDays: nutritionDays,
+            recoveryNightsRecorded: recoveryDays.count,
+            recoveryEligibleNights: eligibleDates.count,
+            completedTrainingWeeksInLastFour: completedPriorWeeks
+        )
+    }
+
+    private static func uniqueDays(_ dates: [Date], calendar: Calendar) -> Set<Date> {
+        Set(dates.map { calendar.startOfDay(for: $0) })
+    }
+
+    private static func dates(in interval: DateInterval, calendar: Calendar) -> [Date] {
+        (0..<7).compactMap { calendar.date(byAdding: .day, value: $0, to: interval.start) }
+            .filter(interval.contains)
+    }
+
+    private static func dayKey(_ date: Date, calendar: Calendar) -> String {
+        let values = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", values.year ?? 0, values.month ?? 0, values.day ?? 0)
+    }
+}
+
 struct TrainingProfile: Codable, Equatable, Hashable, Sendable {
+    var preferredModality: TrainingModality
+    var experienceLevel: WorkoutExperienceLevel
     var goal: TrainingGoal
     var targetSessionsPerWeek: Int
     var loadUnit: LoadUnit
@@ -12,6 +168,8 @@ struct TrainingProfile: Codable, Equatable, Hashable, Sendable {
     var onDevicePersonalizationEnabled: Bool
 
     init(
+        preferredModality: TrainingModality = .strengthResistance,
+        experienceLevel: WorkoutExperienceLevel = .beginner,
         goal: TrainingGoal = .strengthAndMuscle,
         targetSessionsPerWeek: Int = 4,
         loadUnit: LoadUnit = .pounds,
@@ -22,6 +180,8 @@ struct TrainingProfile: Codable, Equatable, Hashable, Sendable {
         excludedMovementPatterns: Set<MovementPattern> = [],
         onDevicePersonalizationEnabled: Bool = false
     ) {
+        self.preferredModality = preferredModality
+        self.experienceLevel = experienceLevel
         self.goal = goal
         self.targetSessionsPerWeek = min(max(targetSessionsPerWeek, 2), 6)
         self.loadUnit = loadUnit
@@ -40,6 +200,8 @@ struct TrainingProfile: Codable, Equatable, Hashable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
+        case preferredModality
+        case experienceLevel
         case goal
         case targetSessionsPerWeek
         case loadUnit
@@ -54,6 +216,8 @@ struct TrainingProfile: Codable, Equatable, Hashable, Sendable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.init(
+            preferredModality: try container.decodeIfPresent(TrainingModality.self, forKey: .preferredModality) ?? .strengthResistance,
+            experienceLevel: try container.decodeIfPresent(WorkoutExperienceLevel.self, forKey: .experienceLevel) ?? .beginner,
             goal: try container.decodeIfPresent(TrainingGoal.self, forKey: .goal) ?? .strengthAndMuscle,
             targetSessionsPerWeek: try container.decodeIfPresent(Int.self, forKey: .targetSessionsPerWeek) ?? 4,
             loadUnit: try container.decodeIfPresent(LoadUnit.self, forKey: .loadUnit) ?? .pounds,

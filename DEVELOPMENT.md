@@ -64,10 +64,13 @@ Focused routes are also available:
 - `--show-template-editor` opens a new template.
 - `--show-template-library` opens exercise selection for a new template.
 - `--show-active-workout` starts the first seeded template.
+- `--show-workout-builder` opens the guided workout questionnaire.
 - `--show-workout-adjustment` opens Today’s adjustment sheet.
 - `--show-workout-options` opens all three validated workout choices.
 - `--show-workout-detail` opens the recommended workout detail.
 - `--show-generated-workout` opens the generated workout logger unless another workout is already in progress.
+- `--show-plan-editor` opens the manual and optional on-device-assisted Plan draft editor.
+- `--show-meal-history` opens the all-days Meal History.
 - `--show-progress` opens Training History.
 - `--show-recovery-progress` opens Recovery Trends.
 
@@ -105,9 +108,7 @@ xcodebuild -project Dayvera.xcodeproj -target DayveraTests \
   -sdk iphoneos -configuration Debug CODE_SIGNING_ALLOWED=NO build
 ```
 
-See the [QA gallery](QA/README.md) for the current visual fixtures and
-[IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for the complete validation
-record.
+See the [QA gallery](QA/README.md) for the current visual fixtures and validation notes.
 
 ## Dayvera nutrition QA
 

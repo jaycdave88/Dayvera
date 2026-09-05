@@ -122,27 +122,33 @@ import SwiftData
         }
     }
 
-    func saveMeal(id: UUID? = nil, name: String, date: Date, entries: [FoodEntry], photo: Data?) throws {
+    @discardableResult
+    func saveMeal(id: UUID? = nil, name: String, date: Date, entries: [FoodEntry], photo: Data?) throws -> MealSaveResult {
         guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, name.count <= 120,
               !entries.isEmpty, entries.count <= 100,
-              entries.allSatisfy({ !$0.name.isEmpty && $0.name.count <= 300 && $0.grams.isFinite && $0.grams > 0 && $0.nutrients.isValid }) else {
+              entries.allSatisfy({ !$0.name.isEmpty && $0.name.count <= 300 && $0.quantityIsValid && $0.nutrients.isValid }) else {
             throw NutritionError.invalid("Add a meal name and valid food portions before saving.")
         }
+        let existingMeal = meals.first(where: { $0.id == id })
+        let savedID = existingMeal?.id ?? UUID()
+        let created = existingMeal == nil
         let newPhoto = try photo.map { try NutritionStore.savePhoto($0) }
         var previousPhoto: String?
         do {
             try transaction { context in
-                if let existing = meals.first(where: { $0.id == id }) {
+                if let existing = existingMeal {
                     let oldKey = NutritionStore.mealDayKey(existing)
                     days.first { $0.dayKey == oldKey }?.isComplete = false
                     existing.name = name; existing.date = date; existing.timeZoneID = TimeZone.current.identifier
                     existing.entriesData = try JSONEncoder().encode(entries)
                     if let newPhoto { previousPhoto = existing.photoFilename; existing.photoFilename = newPhoto }
-                } else { context.insert(try MealRecord(date: date, name: name, entries: entries, photoFilename: newPhoto)) }
+                } else { context.insert(try MealRecord(id: savedID, date: date, name: name, entries: entries, photoFilename: newPhoto)) }
                 day(on: date)?.isComplete = false
             }
             NutritionStore.removePhoto(previousPhoto)
         } catch { NutritionStore.removePhoto(newPhoto); throw error }
+        return MealSaveResult(mealID: savedID, date: date, dayKey: NutritionStore.dayKey(date),
+                              total: entries.reduce(.zero) { $0 + $1.nutrients }, created: created)
     }
     func deleteMeal(_ meal: MealRecord) throws {
         let photo = meal.photoFilename

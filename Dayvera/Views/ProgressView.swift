@@ -78,7 +78,7 @@ private struct ProgressDetailView<SectionPicker: View>: View {
         ScrollView {
             LazyVStack(spacing: 18) {
                 if allowsSectionSelection { sectionPicker }
-                dateRangeControl
+                if section != .nutrition { dateRangeControl }
                 switch section {
                 case .recovery:
                     recoveryContent
@@ -396,10 +396,27 @@ private struct ProgressDetailView<SectionPicker: View>: View {
                 detail: "Complete a workout to see per-exercise strength trends."
             )
         } else {
+            trainingTakeawayCard
             trainingSummary
             exerciseTrendCard
             exerciseHistory
             workoutHistory
+        }
+    }
+
+    private var trainingTakeawayCard: some View {
+        CoachCard {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Training Summary", systemImage: "chart.line.uptrend.xyaxis")
+                    .font(.headline)
+                    .foregroundStyle(Color.coachIndigo)
+                Text(trainingTakeaway)
+                    .font(.title3.weight(.semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Strength values are estimates from completed working sets, not tested one-rep maxes.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -412,8 +429,28 @@ private struct ProgressDetailView<SectionPicker: View>: View {
             LazyVGrid(columns: summaryColumns, spacing: 10) {
                 MetricTile(label: "Sessions", value: "\(period.count)", detail: "Across \(trainingDays) training days", tint: .coachIndigo)
                 MetricTile(label: "Working sets", value: "\(workingSets.count)", detail: "Warm-ups excluded", tint: .coachIndigo)
+                MetricTile(label: "Training days", value: "\(trainingDays)", detail: "In this date range", tint: .coachIndigo)
             }
         }
+    }
+
+    private var trainingTakeaway: String {
+        guard !periodSessions.isEmpty else {
+            return "No completed workouts are recorded in this date range."
+        }
+        let points = selectedExercisePoints
+        guard points.count >= 2,
+              let first = points.first?.estimatedOneRepMax,
+              let last = points.last?.estimatedOneRepMax,
+              first > 0 else {
+            let days = Set(periodSessions.map { Calendar.current.startOfDay(for: $0.startedAt) }).count
+            return "You completed \(periodSessions.count) workout\(periodSessions.count == 1 ? "" : "s") across \(days) training day\(days == 1 ? "" : "s")."
+        }
+        let change = ((last - first) / first) * 100
+        if abs(change) < 1 {
+            return "Estimated strength for \(selectedExerciseName) is steady across this range."
+        }
+        return "Estimated strength for \(selectedExerciseName) is \(change > 0 ? "up" : "down") \(abs(change).formatted(.number.precision(.fractionLength(0...1))))% across this range."
     }
 
     private var exerciseTrendCard: some View {
@@ -697,7 +734,9 @@ private struct ProgressDetailView<SectionPicker: View>: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
                 Text(session.templateName).font(.headline)
-                Text("\(session.startedAt.shortDay) · \(Int(session.durationMinutes)) min · \(session.sets.filter { !$0.isWarmup }.count) working sets")
+                Text(session.modality == .strengthResistance
+                     ? "\(session.startedAt.shortDay) · \(Int(session.durationMinutes)) min · \(session.sets.filter { !$0.isWarmup }.count) working sets"
+                     : "\(session.startedAt.shortDay) · \(Int(session.durationMinutes)) min · \(session.modality.title)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

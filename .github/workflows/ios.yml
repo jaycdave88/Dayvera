@@ -1,0 +1,52 @@
+name: iOS 27 build and tests
+
+on:
+  push:
+    paths:
+      - "Dayvera/**"
+      - "DayveraTests/**"
+      - "Dayvera.xcodeproj/**"
+      - ".github/workflows/ios.yml"
+  pull_request:
+    paths:
+      - "Dayvera/**"
+      - "DayveraTests/**"
+      - "Dayvera.xcodeproj/**"
+      - ".github/workflows/ios.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Xcode 27 · iPhone 17 Pro
+    # GitHub's official Xcode 27 arm64 image is currently a public preview.
+    runs-on: xcode-27
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Confirm toolchain
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphonesimulator --show-sdk-version
+
+      - name: Build and test
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project Dayvera.xcodeproj \
+            -scheme Dayvera \
+            -sdk iphonesimulator \
+            -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=27.0' \
+            -derivedDataPath "$RUNNER_TEMP/DayveraDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            SDKROOT=iphonesimulator

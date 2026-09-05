@@ -7,9 +7,9 @@ enum TrainingGoal: String, Codable, CaseIterable, Hashable, Sendable {
 
     var title: String {
         switch self {
-        case .strengthAndMuscle: "Strength + muscle"
-        case .strength: "Strength"
-        case .muscleGain: "Muscle gain"
+        case .strengthAndMuscle: "Balanced strength and muscle"
+        case .strength: "Strength emphasis"
+        case .muscleGain: "Muscle-building emphasis"
         }
     }
 }

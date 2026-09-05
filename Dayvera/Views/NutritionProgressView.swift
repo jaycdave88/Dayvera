@@ -10,6 +10,19 @@ struct NutritionProgressView: View {
             LazyVStack(spacing: 18) {
                 Picker("Window", selection: $window) { Text("7 days").tag(7); Text("28 days").tag(28) }.pickerStyle(.segmented)
                 CoachCard {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Nutrition Summary", systemImage: "chart.line.uptrend.xyaxis")
+                            .font(.headline)
+                            .foregroundStyle(Color.coachIndigo)
+                        Text(progressTakeaway)
+                            .font(.title3.weight(.semibold))
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text("Adjustment checks use the last 21 days. Charts below use the selected \(window)-day range. Incomplete days remain visible but do not count as adaptation evidence.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                CoachCard {
                     VStack(alignment: .leading, spacing: 14) {
                         SectionTitle(title: "Weight trend", subtitle: "Daily observations and seven-day averages")
                         if points.isEmpty { Text("Add a weigh-in or connect body-weight data through Apple Health.").foregroundStyle(.secondary) }
@@ -23,9 +36,23 @@ struct NutritionProgressView: View {
                                     LineMark(x: .value("Week", point.date), y: .value("Average", displayedWeight(point.kg)))
                                         .foregroundStyle(Color.coachMint).symbol(.circle)
                                 }
-                            }.chartYScale(domain: .automatic(includesZero: false)).frame(height: 210)
+                            }
+                                .chartYScale(domain: .automatic(includesZero: false))
+                                .chartYAxis {
+                                    AxisMarks(position: .leading) { value in
+                                        AxisGridLine()
+                                        AxisTick()
+                                        AxisValueLabel {
+                                            if let weight = value.as(Double.self) {
+                                                Text("\(weight.formatted(.number.precision(.fractionLength(0...1)))) \(weightUnit)")
+                                            }
+                                        }
+                                    }
+                                }
+                                .frame(height: 210)
                                 .accessibilityLabel("Body weight in \(nutrition.profile.usesMetric ? "kilograms" : "pounds")")
-                            Text("\(points.count) weigh-in days · \(points.first?.source ?? "") · missing days stay missing").font(.footnote).foregroundStyle(.secondary)
+                                .accessibilityValue(weightChartSummary)
+                            Text("\(points.count) weigh-in days · \(weightSourceSummary) · missing days stay missing").font(.footnote).foregroundStyle(.secondary)
                             if let slope = NutritionAdaptationEngine.slope(points) {
                                 LabeledContent("Robust weekly trend", value: String(format: "%+.2f%% / week", slope))
                             }
@@ -46,7 +73,11 @@ struct NutritionProgressView: View {
                                     PointMark(x: .value("Day", day.date), y: .value("Saved target", target)).foregroundStyle(Color.coachIndigo)
                                 }
                             }
-                        }.frame(height: 200)
+                        }
+                            .frame(height: 200)
+                            .accessibilityElement(children: .contain)
+                            .accessibilityLabel("Calories logged compared with saved targets")
+                            .accessibilityValue(intakeChartSummary)
                         Text("Green: complete · amber: unconfirmed · indigo: saved target. Empty dates mean missing intake.").font(.footnote).foregroundStyle(.secondary)
                         LabeledContent("Complete intake days", value: "\(evidence.filter { $0.intake.complete }.count) / \(window)")
                         let proteinDays = evidence.filter { day in
@@ -106,6 +137,33 @@ struct NutritionProgressView: View {
         }
     }
     private var evidence: [NutritionDailyEvidence] { Array(nutrition.evidence().prefix(window).reversed()) }
+    private var progressTakeaway: String {
+        let completeDays = evidence.filter { $0.intake.complete }.count
+        guard completeDays > 0 else {
+            return "Complete a logged day to begin building evidence for nutrition target adjustments."
+        }
+        if let reason = nutrition.evaluation()?.reason, !reason.isEmpty {
+            return "21-day adjustment check: \(reason)"
+        }
+        return "You have \(completeDays) complete intake day\(completeDays == 1 ? "" : "s") in this range. Keep logging to make trend estimates more reliable."
+    }
+    private var weightUnit: String { nutrition.profile.usesMetric ? "kg" : "lb" }
+    private var weightSourceSummary: String {
+        let sources = Array(Set(points.map(\.source))).sorted()
+        if sources.isEmpty { return "No source" }
+        if sources.count == 1 { return sources[0] }
+        return "\(sources.count) sources"
+    }
+    private var weightChartSummary: String {
+        guard let first = points.first, let last = points.last else { return "No recorded weights in this range." }
+        let change = displayedWeight(last.kg - first.kg)
+        return "\(points.count) recorded weigh-in days. First \(displayedWeight(first.kg).formatted(.number.precision(.fractionLength(1)))) \(weightUnit), latest \(displayedWeight(last.kg).formatted(.number.precision(.fractionLength(1)))) \(weightUnit), change \(change.formatted(.number.precision(.fractionLength(1)).sign(strategy: .always()))) \(weightUnit). Missing dates are gaps."
+    }
+    private var intakeChartSummary: String {
+        let knownDays = evidence.filter { $0.intake.calories != nil }.count
+        let completeDays = evidence.filter { $0.intake.complete }.count
+        return "\(knownDays) days have known calories; \(completeDays) are confirmed complete in this \(window)-day range. Empty dates mean missing intake."
+    }
     private func displayedWeight(_ kg: Double) -> Double { nutrition.profile.usesMetric ? kg : kg / 0.45359237 }
     private func measurementLabels(_ item: BodyMeasurementRecord) -> [String] {
         [("Waist", item.waistCM), ("Hips", item.hipsCM), ("Arm", item.armCM), ("Thigh", item.thighCM)].compactMap { name, cm in
@@ -162,6 +220,7 @@ struct NutritionDailyTotalView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var nutrition: NutritionModel
     let date: Date
+    var onSaved: (() -> Void)? = nil
     @State private var amounts = NutritionAmounts.zero
     @State private var confirmed = false
     @State private var error: String?
@@ -178,7 +237,13 @@ struct NutritionDailyTotalView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) { Button("Save") {
-                    do { try nutrition.updateDay(date, manual: amounts); dismiss() } catch { self.error = error.localizedDescription }
+                    do {
+                        try nutrition.updateDay(date, manual: amounts)
+                        onSaved?()
+                        dismiss()
+                    } catch {
+                        self.error = error.localizedDescription
+                    }
                 }.disabled(!confirmed) }
             }
         }

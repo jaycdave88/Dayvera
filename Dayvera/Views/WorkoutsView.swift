@@ -8,18 +8,32 @@ struct WorkoutsView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @EnvironmentObject private var appModel: AppModel
+    @ObservedObject private var catalogStore = ExerciseCatalogStore.shared
     @Query(sort: \WorkoutTemplateRecord.createdAt) private var templates: [WorkoutTemplateRecord]
     @Query(sort: \WorkoutSessionRecord.startedAt, order: .reverse) private var sessions: [WorkoutSessionRecord]
     @State private var showingNewTemplate = false
+    @State private var showingWorkoutBuilder = false
     @State private var templateToEdit: WorkoutTemplateRecord?
     @State private var activeTemplate: WorkoutTemplateRecord?
     @State private var generatedDraftTemplate: WorkoutTemplateRecord?
     @State private var activeDraft: ActiveWorkoutDraft?
     @State private var templateToDelete: WorkoutTemplateRecord?
     @State private var showingDiscardDraft = false
-    @State private var showingDebugProgress = false
+    @State private var generatedWorkout: GuidedWorkoutPlan?
+    @State private var lastBuildIntent: WorkoutBuildIntent?
+    @State private var buildError: String?
     @State private var appliedDebugRoute = false
     private let draftStore = ActiveWorkoutDraftStore()
+    let onOpenToday: () -> Void
+    let onOpenTrainingProgress: (() -> Void)?
+
+    init(
+        onOpenToday: @escaping () -> Void = {},
+        onOpenTrainingProgress: (() -> Void)? = nil
+    ) {
+        self.onOpenToday = onOpenToday
+        self.onOpenTrainingProgress = onOpenTrainingProgress
+    }
 
     var body: some View {
         ScrollView {
@@ -32,13 +46,16 @@ struct WorkoutsView: View {
                 if activeDraft == nil, let quickStartTemplate {
                     quickStartCard(quickStartTemplate)
                 }
+                if activeDraft == nil {
+                    workoutBuilderCard
+                }
                 templateSectionHeader
 
                 if templates.isEmpty {
                     emptyTemplatesCard
                 } else {
                     ForEach(templates) { template in
-                        templateCard(template)
+                        templateRow(template)
                     }
                 }
             }
@@ -49,6 +66,8 @@ struct WorkoutsView: View {
         .navigationBarTitleDisplayMode(dynamicTypeSize.isAccessibilitySize ? .inline : .large)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
+                trainingProgressToolbarItem
+
                 NavigationLink {
                     ExerciseLibraryView()
                 } label: {
@@ -65,18 +84,34 @@ struct WorkoutsView: View {
             }
         }
         .sheet(isPresented: $showingNewTemplate) { TemplateEditorView() }
+        .sheet(isPresented: $showingWorkoutBuilder) {
+            WorkoutBuildSheet(initialIntent: lastBuildIntent, onBuild: buildWorkout)
+        }
+        .sheet(item: $generatedWorkout) { plan in
+            GeneratedWorkoutPreview(
+                plan: plan,
+                onStart: { startGeneratedWorkout(plan) },
+                onSave: { saveGeneratedWorkout(plan) },
+                onEdit: {
+                    generatedWorkout = nil
+                    showingWorkoutBuilder = true
+                },
+                onRegenerate: { regenerate(plan) }
+            )
+        }
         .sheet(item: $templateToEdit) { template in
             TemplateEditorView(template: template)
         }
         .fullScreenCover(item: $activeTemplate, onDismiss: loadDraftState) { template in
-            ActiveWorkoutView(
-                template: template,
-                adjustment: appModel.plan.workoutAdjustment,
-                loadUnit: appModel.trainingProfile.loadUnit
-            )
-        }
-        .navigationDestination(isPresented: $showingDebugProgress) {
-            TrainingHistoryView()
+            if template.modality == .strengthResistance {
+                ActiveWorkoutView(
+                    template: template,
+                    adjustment: appModel.plan.workoutAdjustment,
+                    loadUnit: appModel.trainingProfile.loadUnit
+                )
+            } else {
+                GuidedActiveWorkoutView(template: template)
+            }
         }
         .confirmationDialog(
             "Delete \(templateToDelete?.name ?? "this template")?",
@@ -110,6 +145,15 @@ struct WorkoutsView: View {
         } message: {
             Text("Recorded set progress in this unfinished workout will be removed.")
         }
+        .alert("Workout couldn’t be built", isPresented: Binding(
+            get: { buildError != nil },
+            set: { if !$0 { buildError = nil } }
+        )) {
+            Button("Review answers") { showingWorkoutBuilder = true }
+            Button("Cancel", role: .cancel) { buildError = nil }
+        } message: {
+            Text(buildError ?? "Review the workout details and try again.")
+        }
         .onAppear {
             loadDraftState()
             applyDebugRouteIfNeeded()
@@ -117,6 +161,129 @@ struct WorkoutsView: View {
         .onChange(of: templates.count) { _, _ in
             loadDraftState()
             applyDebugRouteIfNeeded()
+        }
+    }
+
+    private func buildWorkout(_ request: WorkoutBuildIntent) {
+        lastBuildIntent = request
+        appModel.trainingProfile.preferredModality = request.modality
+        appModel.trainingProfile.experienceLevel = request.level
+        do {
+            if request.modality == .strengthResistance {
+                let profile = appModel.trainingProfile
+                let selectedProfile = EquipmentProfile(
+                    id: EquipmentProfileID(rawValue: "session-selection"),
+                    name: "Selected equipment",
+                    equipment: request.equipment
+                )
+                let constraints = WorkoutConstraints(
+                    availableMinutes: request.availableMinutes,
+                    goal: profile.goal,
+                    targetSessionsPerWeek: profile.targetSessionsPerWeek,
+                    equipmentProfile: selectedProfile,
+                    preferredFocus: request.focus,
+                    effort: request.effort,
+                    preferredExerciseIDs: profile.preferredExerciseIDs,
+                    excludedExerciseIDs: profile.excludedExerciseIDs,
+                    excludedMovementPatterns: profile.excludedMovementPatterns
+                )
+                let pool = CuratedExerciseCatalog.makePool(from: catalogStore.exercises)
+                let state = DailyTrainingStateBuilder().makeState(
+                    snapshot: appModel.snapshot,
+                    sessions: sessions,
+                    constraints: constraints,
+                    curatedPool: pool,
+                    enabledRecoveryMetrics: Set(appModel.preferences.decisionMetricPreferences.filter(\.usedInRecommendation).map(\.metric)),
+                    loadUnit: profile.loadUnit
+                )
+                let candidate = try WorkoutPlanningEngine().generate(
+                    from: state,
+                    curatedPool: pool,
+                    loadUnit: profile.loadUnit
+                ).primary
+                generatedWorkout = GuidedWorkoutPlan(
+                    modality: .strengthResistance,
+                    title: candidate.plan.title,
+                    expectedDurationMinutes: candidate.plan.expectedDurationMinutes,
+                    exercises: candidate.plan.exercises.map { $0.workoutExercise(loadUnit: profile.loadUnit) },
+                    rationale: "Built from today’s recovery, training history, selected equipment, time, and hard exclusions."
+                )
+            } else {
+                let effectiveEffort: PlannedEffort = request.modality == .cardio
+                    && appModel.snapshot.readinessBand == .low
+                    ? .easier
+                    : request.effort
+                let plan = try GuidedWorkoutPlanner().build(
+                    modality: request.modality,
+                    minutes: request.availableMinutes,
+                    equipment: request.equipment,
+                    level: request.level,
+                    effort: effectiveEffort
+                )
+                if effectiveEffort != request.effort {
+                    generatedWorkout = GuidedWorkoutPlan(
+                        id: plan.id,
+                        modality: plan.modality,
+                        title: plan.title,
+                        expectedDurationMinutes: plan.expectedDurationMinutes,
+                        exercises: plan.exercises,
+                        rationale: "Recovery is low today, so Dayvera selected the easier cardio intensity. \(plan.rationale)"
+                    )
+                } else {
+                    generatedWorkout = plan
+                }
+            }
+        } catch {
+            buildError = error.localizedDescription
+        }
+    }
+
+    private func startGeneratedWorkout(_ plan: GuidedWorkoutPlan) {
+        guard draftStore.load() == nil else {
+            generatedWorkout = nil
+            loadDraftState()
+            return
+        }
+        generatedWorkout = nil
+        activeTemplate = WorkoutTemplateRecord(name: plan.title, exercises: plan.exercises)
+    }
+
+    private func saveGeneratedWorkout(_ plan: GuidedWorkoutPlan) {
+        modelContext.insert(WorkoutTemplateRecord(name: plan.title, exercises: plan.exercises))
+        do {
+            try modelContext.save()
+            generatedWorkout = nil
+            appModel.notice = "\(plan.title) was saved to your workouts."
+        } catch {
+            modelContext.rollback()
+            buildError = "The generated workout could not be saved: \(error.localizedDescription)"
+        }
+    }
+
+    private func regenerate(_ plan: GuidedWorkoutPlan) {
+        guard let lastBuildIntent else { return }
+        buildWorkout(lastBuildIntent)
+    }
+
+    private var workoutBuilderCard: some View {
+        CoachCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Build today’s workout", systemImage: "sparkles")
+                    .font(.headline)
+                    .foregroundStyle(Color.coachIndigo)
+                Text("Choose a workout type, time, level, and the equipment available today. Strength keeps validated recovery limits and exclusions; low recovery softens guided cardio intensity.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button {
+                    showingWorkoutBuilder = true
+                } label: {
+                    Label("Build Workout", systemImage: "wand.and.stars")
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.coachIndigo)
+            }
         }
     }
 
@@ -152,6 +319,23 @@ struct WorkoutsView: View {
         return SectionTitle(title: title, subtitle: subtitle)
     }
 
+    @ViewBuilder private var trainingProgressToolbarItem: some View {
+        if let onOpenTrainingProgress {
+            Button(action: onOpenTrainingProgress) {
+                Image(systemName: "chart.xyaxis.line")
+            }
+            .accessibilityLabel("Training Progress")
+            .accessibilityHint("Opens Training in the Progress tab")
+        } else {
+            NavigationLink {
+                TrainingHistoryView()
+            } label: {
+                Image(systemName: "chart.xyaxis.line")
+            }
+            .accessibilityLabel("Training Progress")
+        }
+    }
+
     private var emptyTemplatesCard: some View {
         CoachCard {
             VStack(alignment: .leading, spacing: 12) {
@@ -181,64 +365,59 @@ struct WorkoutsView: View {
         return templates.first
     }
 
-    private func templateCard(_ template: WorkoutTemplateRecord) -> some View {
-        CoachCard {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(template.name).font(.title3.bold())
-                        Text("\(template.exercises.count) exercises · \(adaptedSetCount(template)) working sets today")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Menu {
-                        if activeDraft?.templateID == template.id {
-                            Button("Finish workout to edit", systemImage: "lock.fill") {}
-                                .disabled(true)
-                            Button("Finish workout to delete", systemImage: "lock.fill") {}
-                                .disabled(true)
-                        } else {
-                            Button("Edit template", systemImage: "pencil") { templateToEdit = template }
-                            Button("Delete…", role: .destructive) { templateToDelete = template }
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                            .frame(width: 44, height: 44)
-                    }
-                    .accessibilityLabel("More options for \(template.name)")
-                }
-
-                ForEach(template.exercises.prefix(3)) { exercise in
-                    templateExercisePreview(exercise)
-                }
-
-                if template.exercises.count > 3 {
-                    Text("+ \(template.exercises.count - 3) more")
+    private func templateRow(_ template: WorkoutTemplateRecord) -> some View {
+        HStack(spacing: 10) {
+            NavigationLink {
+                WorkoutPreviewView(
+                    template: template,
+                    adjustment: appModel.plan.workoutAdjustment,
+                    loadUnit: appModel.trainingProfile.loadUnit,
+                    canStart: activeDraft == nil,
+                    onStart: { activeTemplate = template }
+                )
+            } label: {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(template.name)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("\(template.exercises.count) exercises · \(adaptedSetCount(template)) working sets")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Text(lastCompletedDate(for: template).map { "Last completed \($0.shortDay)" } ?? "Not completed yet")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Opens workout preview")
 
-                if let lastCompleted = lastCompletedDate(for: template) {
-                    Label("Last completed \(lastCompleted.shortDay)", systemImage: "clock.fill")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                if activeDraft == nil {
-                    Button {
-                        activeTemplate = template
-                    } label: {
-                        Label("Start workout", systemImage: "play.fill")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .tint(Color.coachIndigo)
-                } else if activeDraft?.templateID != template.id {
-                    Label("Unavailable while another workout is active", systemImage: "lock.fill")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+            Button {
+                activeTemplate = template
+            } label: {
+                Image(systemName: activeDraft == nil ? "play.fill" : "lock.fill")
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.bordered)
+            .tint(Color.coachIndigo)
+            .disabled(activeDraft != nil)
+            .accessibilityLabel("Start \(template.name)")
+            .accessibilityHint(activeDraft == nil ? "Starts this workout immediately" : "Finish or discard the active workout first")
+        }
+        .padding(14)
+        .background(Color.coachSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .contextMenu {
+            if activeDraft?.templateID == template.id {
+                Button("Finish workout to edit", systemImage: "lock.fill") {}
+                    .disabled(true)
+                Button("Finish workout to delete", systemImage: "lock.fill") {}
+                    .disabled(true)
+            } else {
+                Button("Edit template", systemImage: "pencil") { templateToEdit = template }
+                Button("Delete…", role: .destructive) { templateToDelete = template }
             }
         }
     }
@@ -249,7 +428,10 @@ struct WorkoutsView: View {
                 Label("Workout in progress", systemImage: "figure.strengthtraining.traditional")
                     .font(.headline)
                     .foregroundStyle(Color.coachIndigo)
-                Text("\(template.name) · \(draft.sets.filter(\.isComplete).count) of \(draft.sets.count) sets complete")
+                Text(template.name)
+                    .font(.title2.bold())
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("\(draft.sets.filter(\.isComplete).count) of \(draft.sets.count) sets complete")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 if dynamicTypeSize.isAccessibilitySize {
@@ -319,7 +501,10 @@ struct WorkoutsView: View {
         #if DEBUG
         guard !appliedDebugRoute else { return }
         let arguments = ProcessInfo.processInfo.arguments
-        if arguments.contains("--show-template-editor") || arguments.contains("--show-template-library") {
+        if arguments.contains("--show-workout-builder") {
+            appliedDebugRoute = true
+            showingWorkoutBuilder = true
+        } else if arguments.contains("--show-template-editor") || arguments.contains("--show-template-library") {
             appliedDebugRoute = true
             showingNewTemplate = true
         } else if arguments.contains("--show-active-workout"), let template = templates.first {
@@ -327,7 +512,7 @@ struct WorkoutsView: View {
             activeTemplate = template
         } else if arguments.contains("--show-progress") {
             appliedDebugRoute = true
-            showingDebugProgress = true
+            onOpenTrainingProgress?()
         }
         #endif
     }
@@ -358,6 +543,525 @@ struct WorkoutsView: View {
         templates.first(where: { $0.id == draft.templateID })
             ?? (generatedDraftTemplate?.id == draft.templateID ? generatedDraftTemplate : nil)
     }
+}
+
+private struct WorkoutBuildSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var appModel: AppModel
+    @State private var minutes = 45
+    @State private var focus: TrainingFocus?
+    @State private var effort: PlannedEffort = .asPlanned
+    @State private var modality: TrainingModality = .strengthResistance
+    @State private var level: WorkoutExperienceLevel = .beginner
+    @State private var equipment: Set<EquipmentID> = [.bodyweight]
+    @State private var saveEquipmentAsDefault = false
+    @State private var initialized = false
+
+    let initialIntent: WorkoutBuildIntent?
+    let onBuild: (WorkoutBuildIntent) -> Void
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Picker("Workout type", selection: $modality) {
+                        ForEach(TrainingModality.allCases) { item in
+                            Label(item.title, systemImage: item.symbol).tag(item)
+                        }
+                    }
+                    Picker("Experience level", selection: $level) {
+                        ForEach(WorkoutExperienceLevel.allCases) { Text($0.title).tag($0) }
+                    }
+                    Stepper(
+                        "\(appModel.trainingProfile.targetSessionsPerWeek) workouts per week",
+                        value: $appModel.trainingProfile.targetSessionsPerWeek,
+                        in: 2...6
+                    )
+                } header: {
+                    Text("Your training")
+                } footer: {
+                    Text("Workout type and level change the prescription. Your weekly target tracks consistency across all session types.")
+                }
+
+                Section {
+                    Picker("Time available", selection: $minutes) {
+                        ForEach([30, 45, 60], id: \.self) { Text("\($0) min").tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    if modality == .strengthResistance {
+                        Picker("Focus", selection: $focus) {
+                            Text("Recommended").tag(Optional<TrainingFocus>.none)
+                            ForEach(TrainingFocus.allCases, id: \.self) { focus in
+                                Text(focus.title).tag(Optional(focus))
+                            }
+                        }
+                    }
+                    Picker("Effort", selection: $effort) {
+                        Text("As planned").tag(PlannedEffort.asPlanned)
+                        Text("Easier today").tag(PlannedEffort.easier)
+                    }
+                    .pickerStyle(.segmented)
+                } header: {
+                    Text("Today")
+                }
+
+                Section {
+                    ForEach(EquipmentID.allCases, id: \.self) { item in
+                        Toggle(item.title, isOn: Binding(
+                            get: { equipment.contains(item) },
+                            set: { selected in
+                                if selected { equipment.insert(item) }
+                                else if item != .bodyweight { equipment.remove(item) }
+                            }
+                        ))
+                        .disabled(item == .bodyweight)
+                    }
+                    Toggle("Save as my default equipment", isOn: $saveEquipmentAsDefault)
+                    if modality == .strengthResistance {
+                        LabeledContent("Movement exclusions") {
+                            Text("\(appModel.trainingProfile.excludedMovementPatterns.count + appModel.trainingProfile.excludedExerciseIDs.count) set")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } header: {
+                    Text("Available equipment")
+                } footer: {
+                    Text("Choose what is available for this session. Bodyweight is always included. Strength exclusions remain hard rules.")
+                }
+
+                Section {
+                    Toggle("Personalize valid options", isOn: $appModel.trainingProfile.onDevicePersonalizationEnabled)
+                    Text("When available, Apple Intelligence can rank already-safe options and explain the choice. The validated planner creates every exercise and prescription.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } header: {
+                    Text("Optional on-device AI")
+                }
+            }
+            .navigationTitle("Build Workout")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Build") {
+                        if saveEquipmentAsDefault,
+                           let index = appModel.trainingProfile.equipmentProfiles.firstIndex(where: { $0.id == appModel.trainingProfile.activeEquipmentProfileID }) {
+                            appModel.trainingProfile.equipmentProfiles[index].equipment = equipment.union([.bodyweight])
+                        }
+                        appModel.trainingProfile.preferredModality = modality
+                        appModel.trainingProfile.experienceLevel = level
+                        let request = WorkoutBuildIntent(
+                            modality: modality,
+                            availableMinutes: minutes,
+                            focus: focus,
+                            effort: effort,
+                            equipment: equipment,
+                            level: level
+                        )
+                        dismiss()
+                        onBuild(request)
+                    }
+                    .fontWeight(.semibold)
+                }
+            }
+        }
+        .presentationDetents([.large])
+        .onAppear {
+            guard !initialized else { return }
+            initialized = true
+            if let initialIntent {
+                modality = initialIntent.modality
+                minutes = initialIntent.availableMinutes
+                focus = initialIntent.focus
+                effort = initialIntent.effort
+                level = initialIntent.level
+                equipment = initialIntent.equipment.union([.bodyweight])
+            } else {
+                modality = appModel.trainingProfile.preferredModality
+                level = appModel.trainingProfile.experienceLevel
+                equipment = appModel.trainingProfile.activeEquipmentProfile.equipment.union([.bodyweight])
+            }
+        }
+    }
+}
+
+private struct GeneratedWorkoutPreview: View {
+    @Environment(\.dismiss) private var dismiss
+    let plan: GuidedWorkoutPlan
+    let onStart: () -> Void
+    let onSave: () -> Void
+    let onEdit: () -> Void
+    let onRegenerate: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 18) {
+                    CoachCard {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Label(plan.modality.title, systemImage: plan.modality.symbol)
+                                .font(.caption.bold())
+                                .foregroundStyle(Color.coachIndigo)
+                            Text(plan.title).font(.title2.bold())
+                            Label("About \(plan.expectedDurationMinutes) min · \(plan.exercises.count) steps", systemImage: "clock")
+                                .font(.subheadline.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                            Text(plan.rationale)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    SectionTitle(title: "Review workout", subtitle: "Nothing starts or saves until you choose an action")
+                    VStack(spacing: 0) {
+                        ForEach(Array(plan.exercises.enumerated()), id: \.element.id) { index, exercise in
+                            if index > 0 { Divider().padding(.leading, 16) }
+                            HStack(alignment: .top, spacing: 12) {
+                                Text("\(index + 1)")
+                                    .font(.caption.bold())
+                                    .foregroundStyle(Color.coachIndigo)
+                                    .frame(width: 24, height: 24)
+                                    .background(Color.coachIndigo.opacity(0.12), in: Circle())
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(exercise.name).font(.headline)
+                                    if exercise.modality == .strengthResistance {
+                                        Text("\(exercise.workingSets) × \(exercise.targetReps) · RPE \(exercise.targetRPE.formatted(.number.precision(.fractionLength(0...1))))")
+                                            .font(.subheadline).foregroundStyle(.secondary)
+                                    } else {
+                                        Text("\((exercise.durationSeconds ?? 0) / 60) min · \(exercise.intensityCue ?? "Controlled")")
+                                            .font(.subheadline).foregroundStyle(.secondary)
+                                    }
+                                    if let cue = exercise.coachingCue {
+                                        Text(cue).font(.caption).foregroundStyle(.secondary)
+                                    }
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .padding(14)
+                        }
+                    }
+                    .background(Color.coachSurface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+
+                    Button {
+                        dismiss(); onStart()
+                    } label: {
+                        Label("Start Workout", systemImage: "play.fill")
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .tint(Color.coachIndigo)
+
+                    Button {
+                        onSave()
+                    } label: {
+                        Label("Save as Template", systemImage: "square.and.arrow.down")
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    .buttonStyle(.bordered)
+
+                    ViewThatFits(in: .horizontal) {
+                        HStack { secondaryActions }
+                        VStack { secondaryActions }
+                    }
+                }
+                .padding()
+            }
+            .background(Color.coachBackground)
+            .navigationTitle("Generated Workout")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
+        }
+    }
+
+    @ViewBuilder private var secondaryActions: some View {
+        Button("Edit Answers") { onEdit() }
+            .buttonStyle(.bordered).frame(maxWidth: .infinity, minHeight: 44)
+        Button("Generate Another") { onRegenerate() }
+            .buttonStyle(.bordered).frame(maxWidth: .infinity, minHeight: 44)
+    }
+}
+
+private struct GuidedActiveWorkoutView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var appModel: AppModel
+    let template: WorkoutTemplateRecord
+    @State private var startedAt = Date.now
+    @State private var currentTime = Date.now
+    @State private var completedIDs: Set<UUID> = []
+    @State private var notes = ""
+    @State private var saveError: String?
+    @State private var showingEarlyFinishConfirmation = false
+    private let draftStore = ActiveWorkoutDraftStore()
+    private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    LabeledContent("Elapsed", value: elapsedText)
+                    LabeledContent("Progress", value: "\(completedIDs.count) of \(template.exercises.count) steps")
+                    SwiftUI.ProgressView(value: Double(completedIDs.count), total: Double(max(template.exercises.count, 1)))
+                        .tint(Color.coachIndigo)
+                }
+                Section("Session") {
+                    ForEach(template.exercises) { exercise in
+                        Button {
+                            if completedIDs.contains(exercise.id) { completedIDs.remove(exercise.id) }
+                            else { completedIDs.insert(exercise.id) }
+                            saveDraft()
+                        } label: {
+                            HStack(alignment: .top, spacing: 12) {
+                                Image(systemName: completedIDs.contains(exercise.id) ? "checkmark.circle.fill" : "circle")
+                                    .font(.title3)
+                                    .foregroundStyle(completedIDs.contains(exercise.id) ? Color.coachMint : Color.secondary)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(exercise.name).font(.headline).foregroundStyle(.primary)
+                                    Text("\((exercise.durationSeconds ?? 0) / 60) min · \(exercise.intensityCue ?? "Controlled")")
+                                        .font(.subheadline).foregroundStyle(.secondary)
+                                    if let cue = exercise.coachingCue {
+                                        Text(cue).font(.caption).foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                            .frame(minHeight: 44)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("\(exercise.name), \(completedIDs.contains(exercise.id) ? "complete" : "not complete")")
+                    }
+                }
+                Section("Notes") { TextField("Optional session notes", text: $notes, axis: .vertical) }
+                if let saveError { Section { Text(saveError).foregroundStyle(Color.coachRose) } }
+            }
+            .navigationTitle(template.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Save & Close") { saveDraft(); dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Finish") {
+                        if completedIDs.count == template.exercises.count {
+                            finish()
+                        } else {
+                            showingEarlyFinishConfirmation = true
+                        }
+                    }
+                    .disabled(completedIDs.isEmpty)
+                }
+            }
+            .onReceive(ticker) { currentTime = $0 }
+            .onAppear(perform: restoreOrCreateDraft)
+            .onChange(of: notes) { _, _ in saveDraft() }
+        }
+        .interactiveDismissDisabled()
+        .confirmationDialog(
+            "Finish with \(max(template.exercises.count - completedIDs.count, 0)) steps incomplete?",
+            isPresented: $showingEarlyFinishConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Finish Early") { finish() }
+            Button("Continue Workout", role: .cancel) {}
+        } message: {
+            Text("Dayvera will save the session with \(completedIDs.count) of \(template.exercises.count) guided steps completed. You can continue instead.")
+        }
+    }
+
+    private var elapsed: TimeInterval { max(currentTime.timeIntervalSince(startedAt), 0) }
+    private var elapsedText: String {
+        let total = Int(elapsed)
+        return String(format: "%d:%02d", total / 60, total % 60)
+    }
+
+    private func restoreOrCreateDraft() {
+        if let draft = draftStore.load(), draft.templateID == template.id {
+            startedAt = normalizedWorkoutStart(savedStart: draft.startedAt, now: .now)
+            notes = draft.notes
+            completedIDs = Set(draft.sets.filter(\.isComplete).map(\.exerciseID))
+        }
+        saveDraft()
+    }
+
+    private func saveDraft() {
+        let active = template.exercises.map { exercise in
+            ActiveSet(
+                exerciseID: exercise.id,
+                catalogID: exercise.catalogID,
+                exerciseName: exercise.name,
+                setNumber: 1,
+                weight: 0,
+                loadUnit: .pounds,
+                reps: 1,
+                restSeconds: 0,
+                isComplete: completedIDs.contains(exercise.id)
+            )
+        }
+        if !draftStore.save(ActiveWorkoutDraft(
+            templateID: template.id,
+            templateName: template.name,
+            exercises: template.exercises,
+            startedAt: startedAt,
+            sets: active,
+            notes: notes
+        )) {
+            saveError = "This workout could not be autosaved. Keep Dayvera open until you finish."
+        }
+    }
+
+    private func finish() {
+        let end = Date.now
+        let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        let completionSummary = "\(completedIDs.count) of \(template.exercises.count) guided steps completed."
+        let record = WorkoutSessionRecord(
+            templateID: template.id,
+            templateName: template.name,
+            startedAt: validWorkoutIntervalStart(savedStart: startedAt, end: end),
+            endedAt: end,
+            readiness: appModel.snapshot.readinessBand,
+            readinessScore: appModel.snapshot.readinessScore,
+            readinessAvailable: appModel.snapshot.readinessAvailable,
+            sets: [],
+            notes: trimmedNotes.isEmpty ? completionSummary : "\(completionSummary)\n\(trimmedNotes)",
+            healthExportState: .unknown,
+            modality: template.modality
+        )
+        modelContext.insert(record)
+        do {
+            try modelContext.save()
+            draftStore.clear()
+            dismiss()
+        } catch {
+            modelContext.rollback()
+            saveError = "The workout could not be saved: \(error.localizedDescription)"
+        }
+    }
+}
+
+private struct WorkoutPreviewView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    let template: WorkoutTemplateRecord
+    let adjustment: WorkoutAdjustment
+    let loadUnit: LoadUnit
+    let canStart: Bool
+    let onStart: () -> Void
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 20) {
+                CoachCard {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("TODAY'S ADJUSTMENT")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Text(adjustment.title)
+                            .font(.title2.bold())
+                        Label("About \(estimatedMinutes) min · \(setCount) working sets", systemImage: "clock")
+                            .font(.subheadline.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                        Text(adjustment.detail)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                SectionTitle(title: "Exercises", subtitle: "Today’s recovery-adjusted working sets")
+                VStack(spacing: 0) {
+                    ForEach(Array(template.exercises.enumerated()), id: \.element.id) { index, exercise in
+                        if index > 0 { Divider().padding(.leading, 14) }
+                        exerciseRow(exercise)
+                    }
+                }
+                .background(Color.coachSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+                if !canStart {
+                    Label("Finish or discard the workout in progress before starting another.", systemImage: "lock.fill")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Button {
+                    onStart()
+                } label: {
+                    Label("Start Workout", systemImage: "play.fill")
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.coachIndigo)
+                .disabled(!canStart)
+
+                NavigationLink {
+                    TemplateEditorView(template: template)
+                } label: {
+                    Text("Edit Template")
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.bordered)
+                .disabled(!canStart)
+            }
+            .padding()
+        }
+        .background(Color.coachBackground)
+        .navigationTitle(template.name)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func exerciseRow(_ exercise: WorkoutExercise) -> some View {
+        let count = adaptedWorkingSetCounts(
+            for: template.exercises,
+            volumeMultiplier: adjustment.volumeMultiplier
+        )[exercise.id, default: exercise.workingSets]
+        return Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(exercise.name).font(.headline)
+                    exercisePrescription(exercise, setCount: count)
+                }
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text(exercise.name).font(.headline)
+                    Spacer(minLength: 8)
+                    exercisePrescription(exercise, setCount: count)
+                        .multilineTextAlignment(.trailing)
+                }
+            }
+        }
+        .padding(14)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func exercisePrescription(_ exercise: WorkoutExercise, setCount: Int) -> some View {
+        let displayedLoad = workoutPreviewLoad(exercise, displayedIn: loadUnit)
+        return Text("\(setCount) × \(exercise.targetReps) · \(displayedLoad.formatted(.number.precision(.fractionLength(0...1)))) \(loadUnit.symbol)")
+            .font(.subheadline.monospacedDigit())
+            .foregroundStyle(.secondary)
+    }
+
+    private var setCount: Int {
+        adaptedWorkingSetCounts(
+            for: template.exercises,
+            volumeMultiplier: adjustment.volumeMultiplier
+        ).values.reduce(0, +)
+    }
+
+    private var estimatedMinutes: Int {
+        let activeSeconds = setCount * 45
+        let restSeconds = template.exercises.reduce(0) { partial, exercise in
+            let count = adaptedWorkingSetCounts(
+                for: template.exercises,
+                volumeMultiplier: adjustment.volumeMultiplier
+            )[exercise.id, default: exercise.workingSets]
+            return partial + max(count - 1, 0) * exercise.restSeconds
+        }
+        return max(Int(ceil(Double(activeSeconds + restSeconds) / 300.0)) * 5, 10)
+    }
+}
+
+func workoutPreviewLoad(_ exercise: WorkoutExercise, displayedIn unit: LoadUnit) -> Double {
+    exercise.resolvedLoadUnit.convert(exercise.targetWeight, to: unit)
 }
 
 struct TemplateEditorView: View {
@@ -1190,9 +1894,17 @@ struct ActiveWorkoutView: View {
 
     private func exerciseHeader(_ exercise: WorkoutExercise) -> some View {
         HStack(spacing: 8) {
-            Text(exercise.name)
-                .font(.headline)
-                .foregroundStyle(Color.coachIndigo)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(exercise.name)
+                    .font(.headline)
+                    .foregroundStyle(Color.coachIndigo)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let position = exercises.firstIndex(where: { $0.id == exercise.id }) {
+                    Text("Exercise \(position + 1) of \(exercises.count)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
             Spacer(minLength: 8)
             Menu {
                 Button {
@@ -1318,7 +2030,7 @@ struct ActiveWorkoutView: View {
             HStack(spacing: 6) {
                 Image(systemName: "hourglass")
                     .foregroundStyle(Color.coachAmber)
-                Text("Rest \(restRemaining)s")
+                Text("Rest \(restClock)")
                     .font(.headline.monospacedDigit())
                 if let restSourceDescription {
                     Text("· \(restSourceDescription)")
@@ -1415,6 +2127,10 @@ struct ActiveWorkoutView: View {
             )
         }
         return String(format: "%02d:%02d", seconds / 60, seconds % 60)
+    }
+
+    private var restClock: String {
+        String(format: "%d:%02d", restRemaining / 60, restRemaining % 60)
     }
 
     private var completedSetCount: Int {

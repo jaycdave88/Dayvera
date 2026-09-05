@@ -1,24 +1,35 @@
 import Charts
+import SwiftData
 import SwiftUI
 
 struct DashboardView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @EnvironmentObject private var appModel: AppModel
+    @EnvironmentObject private var nutrition: NutritionModel
+    @Query(sort: \WorkoutSessionRecord.startedAt, order: .reverse) private var sessions: [WorkoutSessionRecord]
     @State private var showingRecommendationReasons = false
     @State private var showingDebugRecoveryTrends = false
+    @State private var dismissedReturnMessage = false
+    @State private var trainingMilestoneAcknowledged = false
+    let returningExperience: ReturningExperience
     let onOpenTrain: () -> Void
     let onOpenPlan: () -> Void
+    let onOpenNutrition: () -> Void
     let onOpenRecoveryTrends: () -> Void
     let onOpenDataSources: () -> Void
 
     init(
+        returningExperience: ReturningExperience = .none,
         onOpenTrain: @escaping () -> Void = {},
         onOpenPlan: @escaping () -> Void = {},
+        onOpenNutrition: @escaping () -> Void = {},
         onOpenRecoveryTrends: @escaping () -> Void = {},
         onOpenDataSources: @escaping () -> Void = {}
     ) {
+        self.returningExperience = returningExperience
         self.onOpenTrain = onOpenTrain
         self.onOpenPlan = onOpenPlan
+        self.onOpenNutrition = onOpenNutrition
         self.onOpenRecoveryTrends = onOpenRecoveryTrends
         self.onOpenDataSources = onOpenDataSources
     }
@@ -26,15 +37,22 @@ struct DashboardView: View {
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 18) {
+                if returningExperience != .none, !dismissedReturnMessage {
+                    returningUserCard
+                }
                 TodayWorkoutRecommendationView(onOpenTrain: onOpenTrain)
-                if appModel.snapshot.readinessAvailable {
+                if appModel.snapshot.readinessAvailable, !availableRecoverySignals.isEmpty {
                     recoverySignals
                     recoveryTrendsNavigation
                 } else {
                     connectCard
                 }
-                NutritionTodayCard()
+                NutritionTodayCard(onOpenNutrition: onOpenNutrition)
                 morningPlanCard
+                weeklyRhythmCard
+                if weeklyRhythm.trainingPlanMet, !trainingMilestoneAcknowledged {
+                    trainingMilestoneCard
+                }
                 safetyNote
             }
             .padding()
@@ -56,11 +74,15 @@ struct DashboardView: View {
             RecoveryTrendsView()
         }
         .task {
+            trainingMilestoneAcknowledged = appModel.hasAcknowledgedMotivationReceipt(trainingWeekMilestoneID)
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--show-recovery-progress") {
                 showingDebugRecoveryTrends = true
             }
             #endif
+        }
+        .onChange(of: trainingWeekMilestoneID) { _, identifier in
+            trainingMilestoneAcknowledged = appModel.hasAcknowledgedMotivationReceipt(identifier)
         }
     }
 
@@ -300,7 +322,7 @@ struct DashboardView: View {
                 title: "Recovery signals",
                 subtitle: "Current value compared with your target or recent baseline"
             )
-            ForEach(appModel.snapshot.recoverySignals) { signal in
+            ForEach(availableRecoverySignals) { signal in
                 RecoverySignalRow(signal: signal)
             }
         }
@@ -338,6 +360,16 @@ struct DashboardView: View {
         }
     }
 
+    /// Today is for decisions, not HealthKit diagnostics. A missing or stale
+    /// signal remains configurable in Data & Sources, but only recent readings
+    /// with an identified source are shown as recovery cards here.
+    private var availableRecoverySignals: [MetricTrendSeries] {
+        appModel.snapshot.recoverySignals.filter { signal in
+            guard signal.currentValue != nil, signal.sourceName != nil else { return false }
+            return signal.freshness == .current || signal.freshness == .recent
+        }
+    }
+
     private var readinessColor: Color {
         appModel.snapshot.readinessAvailable ? appModel.snapshot.readinessBand.color : .coachIndigo
     }
@@ -347,6 +379,132 @@ struct DashboardView: View {
             .font(.caption2)
             .foregroundStyle(.secondary)
             .padding(.horizontal, 8)
+    }
+
+    private var weeklyRhythm: WeeklyRhythm {
+        WeeklyRhythmEngine.summary(
+            sessionDates: sessions.map(\.endedAt),
+            trainingTarget: appModel.trainingProfile.targetSessionsPerWeek,
+            completedNutritionDayKeys: Set(nutrition.days.filter(\.isComplete).map(\.dayKey)),
+            recoveryDates: appModel.snapshot.sleepSessions.map(\.endDate)
+        )
+    }
+
+    private var trainingWeekMilestoneID: String {
+        "training-week-\(Int(weeklyRhythm.weekStart.timeIntervalSince1970))"
+    }
+
+    private var returningUserCard: some View {
+        CoachCard {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "arrow.counterclockwise.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(Color.coachIndigo)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Welcome back").font(.headline)
+                    Text(returningExperience == .trendsNeedData
+                         ? "Today’s guidance is ready. Recent trends may need more data before they become useful again."
+                         : "Today’s guidance is ready when you are.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+                Button { dismissedReturnMessage = true } label: {
+                    Image(systemName: "xmark").frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss welcome message")
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private var weeklyRhythmCard: some View {
+        CoachCard {
+            VStack(alignment: .leading, spacing: 14) {
+                SectionTitle(title: "Weekly rhythm", subtitle: "Progress without requiring a perfect week")
+                WeeklyRhythmRow(
+                    title: "Training",
+                    value: "\(weeklyRhythm.trainingCompleted) of \(weeklyRhythm.trainingTarget) planned sessions",
+                    progress: weeklyRhythm.trainingProgress,
+                    tint: .coachIndigo
+                )
+                if nutrition.profile.completedSetup {
+                    WeeklyRhythmRow(
+                        title: "Nutrition evidence",
+                        value: "\(weeklyRhythm.completeNutritionDays) complete days",
+                        progress: weeklyRhythm.nutritionProgress,
+                        tint: .coachMint
+                    )
+                }
+                WeeklyRhythmRow(
+                    title: "Recovery coverage",
+                    value: "\(weeklyRhythm.recoveryNightsRecorded) of \(weeklyRhythm.recoveryEligibleNights) eligible nights",
+                    progress: weeklyRhythm.recoveryProgress,
+                    tint: .coachAmber
+                )
+                if let momentum = weeklyRhythm.momentumText {
+                    Label(momentum, systemImage: "chart.line.uptrend.xyaxis")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private var trainingMilestoneCard: some View {
+        CoachCard {
+            VStack(alignment: .leading, spacing: 10) {
+                Label("Weekly plan complete", systemImage: "checkmark.seal.fill")
+                    .font(.headline)
+                    .foregroundStyle(Color.coachMint)
+                Text("You completed \(weeklyRhythm.trainingCompleted) planned training sessions this week.")
+                    .font(.subheadline)
+                Button("Got it") {
+                    if appModel.acknowledgeMotivationReceipt(trainingWeekMilestoneID) {
+                        trainingMilestoneAcknowledged = true
+                    }
+                }
+                    .buttonStyle(.bordered)
+                    .frame(minHeight: 44)
+            }
+        }
+    }
+}
+
+private struct WeeklyRhythmRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    let title: String
+    let value: String
+    let progress: Double?
+    let tint: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 2) { labels }
+                } else {
+                    HStack(alignment: .firstTextBaseline) { labels }
+                }
+            }
+            if let progress {
+                SwiftUI.ProgressView(value: progress)
+                    .tint(tint)
+                    .accessibilityHidden(true)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+        .accessibilityValue(value)
+    }
+
+    @ViewBuilder private var labels: some View {
+        Text(title).font(.subheadline.weight(.semibold))
+        if !dynamicTypeSize.isAccessibilitySize { Spacer() }
+        Text(value).font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
     }
 }
 

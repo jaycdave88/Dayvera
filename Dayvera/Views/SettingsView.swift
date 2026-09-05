@@ -3,80 +3,82 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject private var appModel: AppModel
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @AppStorage("appearancePreference") private var appearanceRawValue = AppAppearance.system.rawValue
     @Binding var showingDataSources: Bool
     @Binding var showingCalendarSetup: Bool
 
     var body: some View {
         Form {
-            Section("Health & sources") {
+            Section("Connections") {
                 healthConnectionRow
-                NavigationLink {
-                    DataSourcesView()
-                } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Label("Health Data & Sources", systemImage: "slider.horizontal.3")
-                            .font(.headline)
-                        Text("Choose what appears on Today and which Apple Health data shapes your guidance.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .padding(.vertical, 3)
-                }
-            }
-
-            Section {
                 statusRow("Calendar", status: appModel.calendarStatus, symbol: "calendar")
-                if appModel.calendarStatus == "Connected" {
-                    NavigationLink {
-                        CalendarSetupView()
-                    } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Label("Calendar Setup", systemImage: "calendar.badge.checkmark")
-                                .font(.headline)
-                            Text("Choose planning, Workout details, and privacy-safe Busy calendars.")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.vertical, 3)
-                    }
-                }
                 statusRow("Wake alarms", status: appModel.alarmStatus, symbol: "alarm.fill")
-            } header: {
-                Text("Morning plan")
-            } footer: {
-                Text("Calendar and alarm access are requested from Plan. After connecting Calendar, configure each calendar here.")
             }
 
-            Section("Training") {
+            Section("Personalization") {
                 NavigationLink {
                     TrainingPreferencesView(profile: $appModel.trainingProfile)
                 } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Label("Workout Preferences", systemImage: "slider.horizontal.3")
-                            .font(.headline)
-                        Text("\(appModel.trainingProfile.goal.title) · \(appModel.trainingProfile.activeEquipmentProfile.name) · \(appModel.trainingProfile.targetSessionsPerWeek) days/week")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.vertical, 3)
+                    settingsRow(
+                        title: "Workout Preferences",
+                        detail: "\(appModel.trainingProfile.goal.title) · \(appModel.trainingProfile.targetSessionsPerWeek) days/week",
+                        symbol: "dumbbell.fill"
+                    )
+                }
+                NavigationLink {
+                    NutritionView()
+                } label: {
+                    settingsRow(
+                        title: "Nutrition Profile",
+                        detail: "Meals, macro targets, goals, and adaptation",
+                        symbol: "fork.knife"
+                    )
                 }
             }
 
-            Section("Exercise library") {
-                Link(destination: ExerciseCatalogSource.homepageURL) {
-                    Label(ExerciseCatalogSource.attribution, systemImage: "figure.strengthtraining.traditional")
+            Section("Appearance") {
+                Picker("Color mode", selection: $appearanceRawValue) {
+                    ForEach(AppAppearance.allCases) { appearance in
+                        Text(appearance.title).tag(appearance.rawValue)
+                    }
                 }
-                Link("View dataset license", destination: ExerciseCatalogSource.licenseURL)
-                    .font(.subheadline)
-                Text("Exercises and illustrations download from RepDB and are cached on this device. Your health and workout records are not included in those requests.")
+                Text("Applies immediately. System follows your iPhone’s appearance setting.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
 
-            Section("Nutrition") {
-                NavigationLink("Meals, macros and goals", destination: NutritionView())
+            Section("Data") {
+                NavigationLink {
+                    DataSourcesView()
+                } label: {
+                    settingsRow(
+                        title: "Health Data & Sources",
+                        detail: "Choose what appears on Today and shapes guidance",
+                        symbol: "heart.text.square"
+                    )
+                }
+                if appModel.calendarStatus == "Connected" {
+                    NavigationLink {
+                        CalendarSetupView()
+                    } label: {
+                        settingsRow(
+                            title: "Calendar Setup",
+                            detail: "Planning, Workout details, and privacy-safe Busy sharing",
+                            symbol: "calendar.badge.checkmark"
+                        )
+                    }
+                }
+                NavigationLink {
+                    NutritionSourcesView()
+                } label: {
+                    settingsRow(
+                        title: "Nutrition Sources",
+                        detail: "Authoritative intake and USDA catalog provenance",
+                        symbol: "list.bullet.clipboard"
+                    )
+                }
             }
+
             Section("Privacy & safety") {
                 Label("Health and workouts stay on this device", systemImage: "iphone.gen3")
                 Label("No account, ads, or analytics", systemImage: "hand.raised.fill")
@@ -90,6 +92,18 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            Section("About") {
+                LabeledContent("Dayvera version", value: appVersion)
+                Link(destination: ExerciseCatalogSource.homepageURL) {
+                    Label(ExerciseCatalogSource.attribution, systemImage: "figure.strengthtraining.traditional")
+                }
+                Link("Exercise dataset license", destination: ExerciseCatalogSource.licenseURL)
+                Link("USDA FoodData Central", destination: URL(string: "https://fdc.nal.usda.gov/")!)
+                Text("Exercise illustrations and the USDA food catalog are cached on this device. Health and workout records are never included in catalog requests.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
         }
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(dynamicTypeSize.isAccessibilitySize ? .inline : .large)
@@ -99,6 +113,23 @@ struct SettingsView: View {
         .navigationDestination(isPresented: $showingCalendarSetup) {
             CalendarSetupView()
         }
+    }
+
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+    }
+
+    private func settingsRow(title: String, detail: String, symbol: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label(title, systemImage: symbol)
+                .font(.headline)
+            Text(detail)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.vertical, 3)
+        .accessibilityElement(children: .combine)
     }
 
     private var healthConnectionRow: some View {
@@ -147,20 +178,6 @@ struct SettingsView: View {
 struct CalendarSetupView: View {
     @EnvironmentObject private var appModel: AppModel
 
-    private enum SelectionRole {
-        case planning
-        case detailed
-        case busy
-
-        var accessibilityLabel: String {
-            switch self {
-            case .planning: "Planning calendars"
-            case .detailed: "Workout details destination"
-            case .busy: "Busy calendars"
-            }
-        }
-    }
-
     var body: some View {
         Form {
             if let failure = appModel.calendarConfigurationFailure {
@@ -173,133 +190,35 @@ struct CalendarSetupView: View {
             }
 
             Section {
-                selectionSummaryRow(
-                    title: "Planning calendars",
-                    value: appModel.planningCalendarSelectionSummary,
-                    symbol: "calendar"
-                )
-                if appModel.calendarPreferences.planningCalendarIdentifiers != nil {
-                    Button("Use all visible calendars") {
-                        appModel.useAllCalendarsForPlanning()
-                    }
-                }
-                ForEach(appModel.calendarSources) { source in
-                    DisclosureGroup {
-                        ForEach(source.calendars) { calendar in
-                            Toggle(
-                                calendar.title,
-                                isOn: planningBinding(for: calendar.id)
-                            )
-                        }
-                    } label: {
-                        sourceDisclosureLabel(source, role: .planning)
-                    }
-                }
-                ForEach(
-                    appModel.unavailablePlanningCalendarIdentifiers.sorted(),
-                    id: \.self
-                ) { identifier in
-                    unavailableSelectionRow(
-                        title: "Unavailable planning calendar",
-                        buttonTitle: "Remove"
-                    ) {
-                        appModel.setCalendar(identifier, includedInPlanning: false)
-                    }
-                }
-            } header: {
-                Text("Plan from")
-            } footer: {
-                Text("Uses selected calendars to find tomorrow’s first hard commitment. “All visible” also includes calendars added later.")
-            }
-
-            Section {
-                selectionSummaryRow(
-                    title: "Workout details destination",
-                    value: appModel.detailedCalendarSelectionSummary,
-                    symbol: "figure.strengthtraining.traditional"
-                )
-                if appModel.selectedDetailedCalendarIsUnavailable {
-                    Label(
-                        detailedDestinationWarning,
-                        systemImage: "exclamationmark.triangle.fill"
+                NavigationLink {
+                    PlanningCalendarSelectionView()
+                } label: {
+                    CalendarSetupRow(
+                        title: "Planning Calendars",
+                        value: appModel.planningCalendarSelectionSummary,
+                        symbol: "calendar"
                     )
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
                 }
-                ForEach(appModel.calendarSources) { source in
-                    DisclosureGroup {
-                        ForEach(source.calendars) { calendar in
-                            Button {
-                                appModel.selectDetailedCalendar(calendar.id)
-                            } label: {
-                                calendarChoiceLabel(
-                                    calendar,
-                                    isSelected: appModel.calendarPreferences.detailedCalendarIdentifier == calendar.id
-                                )
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(!calendar.allowsContentModifications)
-                        }
-                    } label: {
-                        sourceDisclosureLabel(source, role: .detailed)
-                    }
+                NavigationLink {
+                    DetailsCalendarSelectionView()
+                } label: {
+                    CalendarSetupRow(
+                        title: "Workout Details",
+                        value: appModel.detailedCalendarSelectionSummary,
+                        symbol: "figure.strengthtraining.traditional"
+                    )
                 }
-            } header: {
-                Text("Workout details")
+                NavigationLink {
+                    BusyCalendarSelectionView()
+                } label: {
+                    CalendarSetupRow(
+                        title: "Busy Sharing",
+                        value: appModel.busyCalendarSelectionSummary,
+                        symbol: "calendar.badge.clock"
+                    )
+                }
             } footer: {
-                Text("One writable calendar receives workout title, readiness, and confidence. Missing choices are never replaced automatically.")
-            }
-
-            Section {
-                selectionSummaryRow(
-                    title: "Busy calendars",
-                    value: appModel.busyCalendarSelectionSummary,
-                    symbol: "calendar.badge.clock"
-                )
-                ForEach(appModel.calendarSources) { source in
-                    DisclosureGroup {
-                        ForEach(source.calendars) { calendar in
-                            Toggle(
-                                isOn: busyBinding(for: calendar.id)
-                            ) {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(calendar.title)
-                                    if !calendar.allowsContentModifications {
-                                        Text("Read-only")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    } else if calendar.id == appModel.calendarPreferences.detailedCalendarIdentifier {
-                                        Text("Already receives Workout details")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                            }
-                            .disabled(
-                                calendar.id == appModel.calendarPreferences.detailedCalendarIdentifier
-                                    || (!calendar.allowsContentModifications
-                                        && !appModel.isBusyCalendar(calendar.id))
-                            )
-                        }
-                    } label: {
-                        sourceDisclosureLabel(source, role: .busy)
-                    }
-                }
-                ForEach(
-                    appModel.unavailableBusyCalendarIdentifiers.sorted(),
-                    id: \.self
-                ) { identifier in
-                    unavailableSelectionRow(
-                        title: "Unavailable Busy calendar",
-                        buttonTitle: "Remove"
-                    ) {
-                        appModel.setCalendar(identifier, sharesBusy: false)
-                    }
-                }
-            } header: {
-                Text("Share as Busy")
-            } footer: {
-                Text("Optional events are titled “Busy,” contain no workout or health details, and use Busy availability when supported.")
+                Text("Planning calendars are read for commitments. Workout details go to one writable calendar. Busy sharing creates privacy-safe copies without workout or health details.")
             }
         }
         .navigationTitle("Calendar Setup")
@@ -307,18 +226,14 @@ struct CalendarSetupView: View {
         .refreshable { await appModel.refresh() }
     }
 
-    private var detailedDestinationWarning: String {
-        if appModel.calendarPreferences.detailedCalendarIdentifier == nil {
-            return "No writable default calendar is available. Choose a writable calendar before applying Calendar events."
-        }
-        return "The selected Workout calendar is missing or read-only. Choose another calendar; Dayvera will not redirect the event automatically."
-    }
+}
 
-    private func selectionSummaryRow(
-        title: String,
-        value: String,
-        symbol: String
-    ) -> some View {
+private struct CalendarSetupRow: View {
+    let title: String
+    let value: String
+    let symbol: String
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Label(title, systemImage: symbol)
                 .font(.subheadline.weight(.semibold))
@@ -331,54 +246,48 @@ struct CalendarSetupView: View {
         .accessibilityLabel(title)
         .accessibilityValue(value)
     }
+}
 
-    private func sourceDisclosureLabel(
-        _ source: CalendarSourceDescriptor,
-        role: SelectionRole
-    ) -> some View {
-        let value = sourceSelectionSummary(source, role: role)
-        return VStack(alignment: .leading, spacing: 2) {
-            Text(source.title)
-            Text(value)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(role.accessibilityLabel), \(source.title)")
-        .accessibilityValue(value)
-    }
+private struct PlanningCalendarSelectionView: View {
+    @EnvironmentObject private var appModel: AppModel
 
-    private func sourceSelectionSummary(
-        _ source: CalendarSourceDescriptor,
-        role: SelectionRole
-    ) -> String {
-        let selected: [CalendarDescriptor]
-        let emptyValue: String
-        switch role {
-        case .planning:
-            selected = source.calendars.filter {
-                appModel.isCalendarIncludedInPlanning($0.id)
+    var body: some View {
+        Form {
+            Section {
+                if appModel.calendarPreferences.planningCalendarIdentifiers != nil {
+                    Button("Use all visible calendars") {
+                        appModel.useAllCalendarsForPlanning()
+                    }
+                    .frame(minHeight: 44)
+                } else {
+                    Label("All visible calendars", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(Color.coachIndigo)
+                }
+            } footer: {
+                Text("All visible also includes calendars added later.")
             }
-            emptyValue = "None selected"
-        case .detailed:
-            selected = source.calendars.filter {
-                appModel.calendarPreferences.detailedCalendarIdentifier == $0.id
+
+            ForEach(appModel.calendarSources) { source in
+                Section(source.title) {
+                    ForEach(source.calendars) { calendar in
+                        Toggle(calendar.title, isOn: planningBinding(for: calendar.id))
+                    }
+                }
             }
-            emptyValue = "No details destination"
-        case .busy:
-            selected = source.calendars.filter {
-                appModel.isBusyCalendar($0.id)
+
+            if !appModel.unavailablePlanningCalendarIdentifiers.isEmpty {
+                Section("Unavailable") {
+                    ForEach(appModel.unavailablePlanningCalendarIdentifiers.sorted(), id: \.self) { identifier in
+                        unavailableSelectionRow(title: "Unavailable planning calendar") {
+                            appModel.setCalendar(identifier, includedInPlanning: false)
+                        }
+                    }
+                }
             }
-            emptyValue = "No Busy calendars"
         }
-        if selected.count == 1, let calendar = selected.first {
-            return role == .detailed
-                ? "Selected: \(calendar.title)"
-                : calendar.title
-        }
-        if selected.isEmpty { return emptyValue }
-        return "\(selected.count) selected"
+        .navigationTitle("Planning Calendars")
+        .navigationBarTitleDisplayMode(.inline)
+        .refreshable { await appModel.refresh() }
     }
 
     private func planningBinding(for identifier: String) -> Binding<Bool> {
@@ -388,6 +297,103 @@ struct CalendarSetupView: View {
             appModel.setCalendar(identifier, includedInPlanning: isIncluded)
         }
     }
+}
+
+private struct DetailsCalendarSelectionView: View {
+    @EnvironmentObject private var appModel: AppModel
+
+    var body: some View {
+        Form {
+            if appModel.selectedDetailedCalendarIsUnavailable {
+                Section {
+                    Label(detailedDestinationWarning, systemImage: "exclamationmark.triangle.fill")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            ForEach(appModel.calendarSources) { source in
+                Section(source.title) {
+                    ForEach(source.calendars) { calendar in
+                        Button {
+                            appModel.selectDetailedCalendar(calendar.id)
+                        } label: {
+                            calendarChoiceLabel(
+                                calendar,
+                                isSelected: appModel.calendarPreferences.detailedCalendarIdentifier == calendar.id
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!calendar.allowsContentModifications)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Workout Details")
+        .navigationBarTitleDisplayMode(.inline)
+        .refreshable { await appModel.refresh() }
+    }
+
+    private var detailedDestinationWarning: String {
+        if appModel.calendarPreferences.detailedCalendarIdentifier == nil {
+            return "Choose a writable calendar before applying Calendar events."
+        }
+        return "The selected calendar is missing or read-only. Dayvera will not redirect the event automatically."
+    }
+}
+
+private struct BusyCalendarSelectionView: View {
+    @EnvironmentObject private var appModel: AppModel
+
+    var body: some View {
+        Form {
+            ForEach(appModel.calendarSources) { source in
+                Section(source.title) {
+                    ForEach(source.calendars) { calendar in
+                        Toggle(isOn: busyBinding(for: calendar.id)) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(calendar.title)
+                                if !calendar.allowsContentModifications {
+                                    Text("Read-only")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                } else if calendar.id == appModel.calendarPreferences.detailedCalendarIdentifier {
+                                    Text("Already receives Workout details")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        .disabled(
+                            calendar.id == appModel.calendarPreferences.detailedCalendarIdentifier
+                                || (!calendar.allowsContentModifications && !appModel.isBusyCalendar(calendar.id))
+                        )
+                    }
+                }
+            }
+
+            if !appModel.unavailableBusyCalendarIdentifiers.isEmpty {
+                Section("Unavailable") {
+                    ForEach(appModel.unavailableBusyCalendarIdentifiers.sorted(), id: \.self) { identifier in
+                        unavailableSelectionRow(title: "Unavailable Busy calendar") {
+                            appModel.setCalendar(identifier, sharesBusy: false)
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Busy Sharing")
+        .navigationBarTitleDisplayMode(.inline)
+        .safeAreaInset(edge: .bottom) {
+            Text("Busy events contain no workout or health details.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+                .background(.bar)
+        }
+        .refreshable { await appModel.refresh() }
+    }
 
     private func busyBinding(for identifier: String) -> Binding<Bool> {
         Binding {
@@ -396,11 +402,9 @@ struct CalendarSetupView: View {
             appModel.setCalendar(identifier, sharesBusy: isSelected)
         }
     }
+}
 
-    private func calendarChoiceLabel(
-        _ calendar: CalendarDescriptor,
-        isSelected: Bool
-    ) -> some View {
+private func calendarChoiceLabel(_ calendar: CalendarDescriptor, isSelected: Bool) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(calendar.title)
@@ -418,20 +422,18 @@ struct CalendarSetupView: View {
             }
         }
         .contentShape(Rectangle())
-    }
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(isSelected ? "Selected" : (calendar.allowsContentModifications ? "Not selected" : "Read-only"))
+}
 
-    private func unavailableSelectionRow(
-        title: String,
-        buttonTitle: String,
-        action: @escaping () -> Void
-    ) -> some View {
+private func unavailableSelectionRow(title: String, action: @escaping () -> Void) -> some View {
         HStack {
             Label(title, systemImage: "calendar.badge.exclamationmark")
                 .font(.subheadline)
             Spacer()
-            Button(buttonTitle, role: .destructive, action: action)
+            Button("Remove", role: .destructive, action: action)
+                .frame(minHeight: 44)
         }
-    }
 }
 
 private struct TrainingPreferencesView: View {
@@ -440,8 +442,18 @@ private struct TrainingPreferencesView: View {
 
     var body: some View {
         Form {
-            Section("Goal") {
-                Picker("Training Goal", selection: $profile.goal) {
+            Section {
+                Picker("Default workout type", selection: $profile.preferredModality) {
+                    ForEach(TrainingModality.allCases) { modality in
+                        Text(modality.title).tag(modality)
+                    }
+                }
+                Picker("Experience level", selection: $profile.experienceLevel) {
+                    ForEach(WorkoutExperienceLevel.allCases) { level in
+                        Text(level.title).tag(level)
+                    }
+                }
+                Picker("Strength emphasis", selection: $profile.goal) {
                     ForEach(TrainingGoal.allCases, id: \.self) { goal in
                         Text(goal.title).tag(goal)
                     }
@@ -451,6 +463,10 @@ private struct TrainingPreferencesView: View {
                     value: $profile.targetSessionsPerWeek,
                     in: 2...6
                 )
+            } header: {
+                Text("Training")
+            } footer: {
+                Text("Strength emphasis is used only for strength and resistance sessions.")
             }
 
             Section("Workout Defaults") {

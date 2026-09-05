@@ -323,7 +323,7 @@ struct SystemWorkoutFoundationModelRuntime: WorkoutFoundationModelRuntime {
             let response = try await session.respond(
                 to: prompt,
                 generating: FoundationModelGeneratedWorkoutPersonalization.self,
-                options: GenerationOptions(sampling: .greedy, maximumResponseTokens: 160)
+                options: GenerationOptions(samplingMode: .greedy, maximumResponseTokens: 160)
             )
             return response.content
         } catch is CancellationError {

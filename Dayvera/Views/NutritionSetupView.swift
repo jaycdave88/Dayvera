@@ -5,6 +5,7 @@ struct NutritionSetupView: View {
     @EnvironmentObject private var nutrition: NutritionModel
     @State var draft: NutritionProfile
     @State private var error: String?
+    @State private var measurementEditor: ProfileMeasurementEditor?
 
     var body: some View {
         NavigationStack {
@@ -21,12 +22,8 @@ struct NutritionSetupView: View {
                         ForEach(NutritionSex.allCases) { Text($0.rawValue).tag($0) }
                     }
                     Text("The original equation uses sex-based coefficients. Use both estimates if neither is appropriate; this increases uncertainty.").font(.footnote).foregroundStyle(.secondary)
-                    numberField(draft.usesMetric ? "Height (cm)" : "Height (in)", value: Binding(
-                        get: { draft.usesMetric ? draft.heightCM : draft.heightCM / 2.54 },
-                        set: { draft.heightCM = draft.usesMetric ? $0 : $0 * 2.54 }))
-                    numberField(draft.usesMetric ? "Weight (kg)" : "Weight (lb)", value: Binding(
-                        get: { draft.usesMetric ? draft.weightKG : draft.weightKG / 0.45359237 },
-                        set: { draft.weightKG = draft.usesMetric ? $0 : $0 * 0.45359237; draft.measurementSource = "User entered"; draft.measurementDate = .now }))
+                    measurementRow("Height", value: heightDescription) { measurementEditor = .height }
+                    measurementRow("Weight", value: weightDescription) { measurementEditor = .weight }
                     Toggle("Include body-fat estimate", isOn: Binding(get: { draft.bodyFatPercent != nil }, set: { draft.bodyFatPercent = $0 ? 20 : nil }))
                     if draft.bodyFatPercent != nil {
                         numberField("Body fat (%)", value: Binding(get: { draft.bodyFatPercent ?? 20 }, set: { draft.bodyFatPercent = $0 }))
@@ -75,6 +72,17 @@ struct NutritionSetupView: View {
                 if let error { Section { Text(error).foregroundStyle(Color.coachRose) } }
             }
             .navigationTitle("Nutrition profile")
+            .sheet(item: $measurementEditor) { editor in
+                ProfileMeasurementEditorSheet(kind: editor, usesMetric: draft.usesMetric,
+                                              initialValue: editor == .height ? draft.heightCM : draft.weightKG) { value in
+                    if editor == .height { draft.heightCM = value }
+                    else {
+                        draft.weightKG = value
+                        draft.measurementSource = "User entered"
+                        draft.measurementDate = .now
+                    }
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
@@ -87,5 +95,102 @@ struct NutritionSetupView: View {
     }
     private func numberField(_ title: String, value: Binding<Double>) -> some View {
         HStack { Text(title); Spacer(); TextField(title, value: value, format: .number.precision(.fractionLength(0...1))).multilineTextAlignment(.trailing).keyboardType(.decimalPad).frame(maxWidth: 110) }
+    }
+
+    private func measurementRow(_ title: String, value: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack {
+                Text(title).foregroundStyle(.primary)
+                Spacer()
+                Text(value).foregroundStyle(.secondary).monospacedDigit()
+                Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(.tertiary)
+            }.frame(minHeight: 44)
+        }
+    }
+
+    private var heightDescription: String {
+        if draft.usesMetric { return "\(draft.heightCM.formatted(.number.precision(.fractionLength(0...1)))) cm" }
+        let inches = Int((draft.heightCM / 2.54).rounded())
+        return "\(inches / 12) ft \(inches % 12) in"
+    }
+
+    private var weightDescription: String {
+        let value = draft.usesMetric ? draft.weightKG : draft.weightKG / 0.45359237
+        return "\(value.formatted(.number.precision(.fractionLength(0...1)))) \(draft.usesMetric ? "kg" : "lb")"
+    }
+}
+
+private enum ProfileMeasurementEditor: String, Identifiable {
+    case height, weight
+    var id: String { rawValue }
+}
+
+private struct ProfileMeasurementEditorSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let kind: ProfileMeasurementEditor
+    let usesMetric: Bool
+    let onSave: (Double) -> Void
+    @State private var value: Double
+    @State private var feet: Int
+    @State private var inches: Int
+
+    init(kind: ProfileMeasurementEditor, usesMetric: Bool, initialValue: Double, onSave: @escaping (Double) -> Void) {
+        self.kind = kind
+        self.usesMetric = usesMetric
+        self.onSave = onSave
+        _value = State(initialValue: kind == .weight && !usesMetric ? initialValue / 0.45359237 : initialValue)
+        let totalInches = Int((initialValue / 2.54).rounded())
+        _feet = State(initialValue: totalInches / 12)
+        _inches = State(initialValue: totalInches % 12)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                if kind == .height && !usesMetric {
+                    Section("Height") {
+                        Picker("Feet", selection: $feet) { ForEach(3...8, id: \.self) { Text("\($0) ft").tag($0) } }
+                            .pickerStyle(.wheel)
+                        Picker("Inches", selection: $inches) { ForEach(0...11, id: \.self) { Text("\($0) in").tag($0) } }
+                            .pickerStyle(.wheel)
+                    }
+                } else {
+                    Section {
+                        HStack {
+                            TextField(kind == .height ? "Height" : "Weight", value: $value,
+                                      format: .number.precision(.fractionLength(0...1)))
+                                .keyboardType(.decimalPad)
+                            Text(kind == .height ? "cm" : usesMetric ? "kg" : "lb").foregroundStyle(.secondary)
+                        }
+                    } header: {
+                        Text(kind == .height ? "Height" : "Weight")
+                    } footer: {
+                        Text(kind == .height ? "Supported estimate range: 120–230 cm." : "Supported estimate range: 35–300 kg.")
+                    }
+                }
+            }
+            .navigationTitle("Edit \(kind.rawValue.capitalized)")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        onSave(canonicalValue)
+                        dismiss()
+                    }
+                    .disabled(!canonicalValue.isFinite || !supportedRange.contains(canonicalValue))
+                }
+            }
+        }
+    }
+
+    private var canonicalValue: Double {
+        if kind == .height && !usesMetric { return Double(feet * 12 + inches) * 2.54 }
+        if kind == .weight && !usesMetric { return value * 0.45359237 }
+        return value
+    }
+
+    private var supportedRange: ClosedRange<Double> {
+        kind == .height ? 120...230 : 35...300
     }
 }

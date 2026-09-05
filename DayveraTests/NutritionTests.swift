@@ -83,6 +83,60 @@ final class NutritionEngineTests: XCTestCase {
     }
 }
 
+final class FoodQuantityCompatibilityTests: XCTestCase {
+    func testLegacyFoodEntryDecodesAsCanonicalGrams() throws {
+        let json = #"{"name":"Rice","grams":140,"nutrients":{"calories":180,"protein":4,"carbs":40,"fat":1},"provenance":"Entered from label or manually"}"#
+        let entry = try JSONDecoder().decode(FoodEntry.self, from: Data(json.utf8))
+        XCTAssertEqual(entry.amount, 140)
+        XCTAssertEqual(entry.unit, "g")
+        XCTAssertEqual(entry.count, 1)
+        XCTAssertEqual(entry.gramsPerUnit, 1)
+        XCTAssertEqual(entry.grams, 140)
+        XCTAssertTrue(entry.quantityIsValid)
+    }
+
+    func testQuantityMetadataRoundTripsWithoutChangingCanonicalGrams() throws {
+        let entry = FoodEntry(name: "Rice", grams: 316, nutrients: NutritionAmounts(calories: 410, protein: 8, carbs: 90, fat: 1),
+                              provenance: .database, amount: 1, unit: "cup", count: 2, gramsPerUnit: 158)
+        let decoded = try JSONDecoder().decode(FoodEntry.self, from: JSONEncoder().encode(entry))
+        XCTAssertEqual(decoded, entry)
+        XCTAssertEqual(decoded.quantityDescription, "1 cup × 2")
+        XCTAssertEqual(decoded.grams, decoded.amount * decoded.count * decoded.gramsPerUnit, accuracy: 0.001)
+    }
+
+    func testPartialOrInconsistentQuantityFallsBackToCanonicalGrams() throws {
+        let json = #"{"name":"Rice","amount":2,"unit":"cup","count":2,"gramsPerUnit":200,"grams":140,"nutrients":{"calories":180,"protein":4,"carbs":40,"fat":1},"provenance":"Entered from label or manually"}"#
+        let entry = try JSONDecoder().decode(FoodEntry.self, from: Data(json.utf8))
+        XCTAssertEqual(entry.amount, 140)
+        XCTAssertEqual(entry.unit, "g")
+        XCTAssertEqual(entry.count, 1)
+        XCTAssertEqual(entry.gramsPerUnit, 1)
+        XCTAssertTrue(entry.quantityIsValid)
+    }
+
+    func testChangingCountRescalesNutrientsFromCanonicalGrams() {
+        var entry = FoodEntry(name: "Rice", grams: 158, nutrients: NutritionAmounts(calories: 200, protein: 4, carbs: 44, fat: 1),
+                              provenance: .database, amount: 1, unit: "cup", count: 1, gramsPerUnit: 158)
+        entry.updateQuantity(amount: 1, unit: "cup", count: 2, gramsPerUnit: 158)
+        XCTAssertEqual(entry.grams, 316, accuracy: 0.001)
+        XCTAssertEqual(entry.nutrients.calories, 400, accuracy: 0.001)
+    }
+
+    func testQuantityValidationRejectsMetadataThatDoesNotMatchCanonicalGrams() {
+        let entry = FoodEntry(name: "Rice", grams: 158, nutrients: NutritionAmounts(calories: 200, protein: 4, carbs: 44, fat: 1),
+                              provenance: .database, amount: 2, unit: "cup", count: 1, gramsPerUnit: 158)
+        XCTAssertFalse(entry.quantityIsValid)
+    }
+
+    func testNonGramInitializerWithoutAmountUsesOneDisplayUnit() {
+        let entry = FoodEntry(name: "Banana", grams: 118, nutrients: NutritionAmounts(calories: 105, protein: 1, carbs: 27, fat: 0),
+                              provenance: .manual, unit: "banana")
+        XCTAssertEqual(entry.amount, 1)
+        XCTAssertEqual(entry.gramsPerUnit, 118)
+        XCTAssertTrue(entry.quantityIsValid)
+    }
+}
+
 @MainActor final class NutritionPersistenceTests: XCTestCase {
     private func schema() -> Schema {
         Schema([WorkoutTemplateRecord.self, WorkoutSessionRecord.self, MealRecord.self, NutritionDayRecord.self,
@@ -122,7 +176,11 @@ final class NutritionEngineTests: XCTestCase {
         let (m, container) = try model(); let _ = container
         let now = Date.now
         XCTAssertNil(m.intake(on: now).calories)
-        try m.saveMeal(name: "Lunch", date: now, entries: [food], photo: nil)
+        let save = try m.saveMeal(name: "Lunch", date: now, entries: [food], photo: nil)
+        XCTAssertEqual(save.dayKey, NutritionStore.dayKey(now))
+        XCTAssertEqual(save.mealID, m.meals.first?.id)
+        XCTAssertTrue(save.created)
+        XCTAssertEqual(save.total.calories, 200)
         XCTAssertEqual(m.intake(on: now).calories, 200)
         try m.updateDay(now, complete: true)
         let meal = try XCTUnwrap(m.meals.first)
@@ -135,9 +193,13 @@ final class NutritionEngineTests: XCTestCase {
         XCTAssertEqual(m.intake(on: now).calories, 400)
         try m.deleteMeal(meal)
         XCTAssertEqual(m.intake(on: now).calories, 200)
-        try m.saveMeal(id: m.meals[0].id, name: "Edited", date: now, entries: [food, food], photo: nil)
+        let update = try m.saveMeal(id: m.meals[0].id, name: "Edited", date: now, entries: [food, food], photo: nil)
+        XCTAssertFalse(update.created)
         XCTAssertEqual(m.intake(on: now).calories, 400)
         XCTAssertThrowsError(try m.saveMeal(name: "Broken", date: now, entries: [], photo: nil))
+        var invalidQuantity = food
+        invalidQuantity.count = 0
+        XCTAssertThrowsError(try m.saveMeal(name: "Broken quantity", date: now, entries: [invalidQuantity], photo: nil))
         XCTAssertEqual(m.intake(on: now).calories, 400)
     }
 
@@ -191,6 +253,12 @@ final class NutritionEngineTests: XCTestCase {
         let entry = try catalog.entry(food: match, grams: 250, photo: true)
         XCTAssertEqual(entry.nutrients.calories, match.nutrients.calories * 2.5, accuracy: 0.001)
         XCTAssertEqual(entry.provenance, .photo)
+        if let portion = match.portions.first {
+            let counted = try catalog.entry(food: match, portion: portion, count: 2)
+            XCTAssertEqual(counted.grams, portion.grams * 2, accuracy: 0.001)
+            XCTAssertEqual(counted.count, 2)
+            XCTAssertFalse(counted.unit.isEmpty)
+        }
         XCTAssertThrowsError(try catalog.entry(food: match, grams: .infinity))
         XCTAssertThrowsError(try AppleFoodRecognitionService.validate([RecognizedFood(name: "Rice", estimatedGrams: .nan, question: "")]))
         XCTAssertEqual(try AppleFoodRecognitionService.validate([]), [])

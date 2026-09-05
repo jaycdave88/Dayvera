@@ -16,6 +16,14 @@ python3 Scripts/import_food_catalog.py /path/to/FoodData_Central_sr_legacy_food_
 
 A day's authoritative intake is Dayvera meals, a daily manual total, or one selected Apple Health source. These sources are not silently summed. Missing values remain unknown. Manual values require explicit confirmation; zero means none, not unavailable. Database calories may differ from 4/4/9 arithmetic because of fiber and food-specific energy factors.
 
+## Quantities and meal history
+
+Every reviewed food stores the quantity the user understands—amount, unit, and count—plus grams per unit and canonical total grams. For example, two one-cup portions remain visible as `1 cup × 2`, while nutrient calculations use the corresponding gram total. Editing amount, unit, or count rescales the food's saved nutrient snapshot. Values must be finite and positive, and the resulting gram total must remain within the existing 0.1–10,000 g food-entry boundary.
+
+Older saved foods that contain only grams decode as a one-count gram quantity, preserving their prior nutrient totals. Catalog foods use the selected USDA household portion when available; package-label and manual foods preserve the user's own serving basis. Photo suggestions start with an estimated gram amount and remain visibly estimated until reviewed.
+
+The daily Nutrition screen shows meal name, time, calories, protein, and food count. Meal History groups all locally saved meals by day, shows each day's calorie and protein total, and lets the user return to that date for review or editing. Historical meals retain their original nutrient and provenance snapshots rather than being recalculated from a later catalog version.
+
 ## Energy and macros
 
 Mifflin–St Jeor: RMR = 10 × kg + 6.25 × cm − 5 × age + coefficient. The original sex-based coefficients are +5 and −161. Choosing both uses their midpoint and widens the displayed estimate range. TDEE = RMR × whole-day activity factor (1.2, 1.375, 1.55, or 1.725). Occupation, movement and training are considered together; workout calories are not added a second time.
