@@ -370,6 +370,7 @@ struct TodayWorkoutRecommendationView: View {
         availableMinutes = intent.availableMinutes
         preferredFocus = intent.focus
         plannedEffort = intent.effort
+        appModel.workoutBuildIntent = nil
     }
 
     private var enabledRecoveryMetrics: Set<MetricKind> {
