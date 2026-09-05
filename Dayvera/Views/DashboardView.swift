@@ -38,7 +38,7 @@ struct DashboardView: View {
                     returningUserCard
                 }
                 TodayWorkoutRecommendationView(onOpenTrain: onOpenTrain)
-                if appModel.snapshot.readinessAvailable {
+                if appModel.snapshot.readinessAvailable, !availableRecoverySignals.isEmpty {
                     recoverySignals
                     recoveryTrendsNavigation
                 } else {
@@ -319,7 +319,7 @@ struct DashboardView: View {
                 title: "Recovery signals",
                 subtitle: "Current value compared with your target or recent baseline"
             )
-            ForEach(appModel.snapshot.recoverySignals) { signal in
+            ForEach(availableRecoverySignals) { signal in
                 RecoverySignalRow(signal: signal)
             }
         }
@@ -354,6 +354,16 @@ struct DashboardView: View {
             }
             .buttonStyle(.plain)
             .accessibilityHint("Opens Recovery in the Progress tab")
+        }
+    }
+
+    /// Today is for decisions, not HealthKit diagnostics. A missing or stale
+    /// signal remains configurable in Data & Sources, but only recent readings
+    /// with an identified source are shown as recovery cards here.
+    private var availableRecoverySignals: [MetricTrendSeries] {
+        appModel.snapshot.recoverySignals.filter { signal in
+            guard signal.currentValue != nil, signal.sourceName != nil else { return false }
+            return signal.freshness == .current || signal.freshness == .recent
         }
     }
 
