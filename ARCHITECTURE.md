@@ -12,6 +12,18 @@ Each tab owns a distinct decision. Today prioritizes the current workout and rec
 
 The launch screen is a static semantic background configured by `UILaunchScreen` and the adaptive `LaunchBackground` color asset. It contains no logo sequence, fake progress or intentional delay. First launch uses the existing guided setup; later permissions remain contextual. Returning users go directly to Today, where a locally derived welcome message appears only after a meaningful absence.
 
+## Editable Plan flow
+
+The calculated `DailyPlan` remains the starting point. `PlanDraft` copies its bedtime, wake time, training start, and training end into an ephemeral editing layer. Manual edits and optional on-device suggestions pass through `PlanDraftValidator`, which requires a future wake time, a 7–12 hour sleep opportunity, training after waking, a 20–180 minute workout, and completion by the deterministic ready deadline.
+
+Plan assistance is request-scoped and off by default. `FoundationModelPlanAssistant` can propose only ±120-minute shifts in five-minute increments plus a bounded workout duration. Structured model output is treated as untrusted, validated by `PlanProposalEngine`, and shown as a before/after proposal. The user must first copy it into the draft and save the draft. No edit or suggestion calls EventKit or AlarmKit. Only the existing Apply confirmation creates or replaces app-owned system items using a frozen `PlanApplicationRequest`.
+
+## Training modalities
+
+`WorkoutBuildIntent` captures one session's modality, available time, focus, effort, equipment, and experience level. The supported modalities are cardio, strength/resistance, balance, and flexibility/mobility; levels are beginner, intermediate, and advanced. Bodyweight is always available, and users can select from barbells, dumbbells, kettlebells, benches, racks, cable or strength machines, pull-up bars, bands, suspension trainers, medicine balls, and cardio machines.
+
+Strength continues through the validated planner, RepDB-backed reviewed catalog, hard movement/exercise exclusions, and optional ranking of already-valid candidates. `GuidedWorkoutPlanner` builds cardio, balance, and mobility sessions from a small reviewed local catalog with transparent duration and intensity cues. It does not ask a language model to invent movements or prescriptions. All modalities use the existing preview, active-draft protection, completion, history, and weekly-session accounting paths.
+
 ## Nutrition data flow
 
 1. A confirmed adult profile enters `NutritionEngine`, which returns deterministic, versioned calorie and macro estimates.
@@ -21,6 +33,12 @@ The launch screen is a static semantic background configured by `UILaunchScreen`
 5. SwiftUI charts display observations, source/completeness status and historical targets. What-if calculations use the same engine and constraints as applied targets.
 
 Photo recognition is deliberately separated from nutrient authority. `AppleFoodRecognitionService` validates structured, on-device suggestions for candidate names and rough gram amounts. `FoodCatalogStore`, a package label, manual values or the selected supported Health source supplies nutrients only after review. Recognition failure returns the user to searchable/manual entry with their work preserved.
+
+Each `FoodEntry` preserves the user's amount, unit, count, and grams-per-unit alongside canonical grams. Quantity changes rescale the saved nutrient snapshot, while decoding older entries defaults safely to their previous gram amount. The Nutrition dashboard shows the selected day's reviewed meals; Meal History groups every saved meal by local day with day totals and returns the user to that date.
+
+## Unified Progress
+
+`ProgressView` owns a single segmented Recovery, Training, and Nutrition destination. Recovery and Training reuse the same 7/28-day shell; Nutrition embeds its provenance-aware weight, intake, adherence, measurement, and target history. Focused links from Today and Train open the relevant section without creating duplicate top-level destinations.
 
 ## Motivation and return flow
 
@@ -54,6 +72,7 @@ The original-module database fixture in `DayveraTests/Fixtures` verifies the add
 | `Dayvera/App/AppBrand.swift`, `LegacyCompatibility.swift` | Current identity and explicitly retained persistence/ownership identifiers |
 | `Dayvera/App/DayveraApp.swift`, `NutritionModel.swift` | Dependency injection, additive container, transactions, source selection, profile/history and proposal orchestration |
 | `Dayvera/Domain/TrainingProfile.swift` | Training preferences plus returning-user classification and Weekly Rhythm derivation |
+| `Dayvera/Domain/PlanEditingModels.swift` | Ephemeral Plan draft, deterministic validation, bounded proposal application and application-request conversion |
 | `Dayvera/Domain/NutritionModels.swift` | Profiles, goals, nutrients, catalog/food provenance, targets and evidence values |
 | `Dayvera/Domain/NutritionRecords.swift` | Five additive SwiftData record types |
 | `Dayvera/Services/NutritionEngine.swift` | Initial estimates, macro allocation, cycling and safety boundaries |
@@ -62,6 +81,8 @@ The original-module database fixture in `DayveraTests/Fixtures` verifies the add
 | `Dayvera/Services/NutritionHealthService.swift` | Optional read-only dietary imports, UUID deduplication and bounded queries |
 | `Dayvera/Services/FoodCatalogStore.swift` | Catalog decoding, search and trusted nutrient scaling |
 | `Dayvera/Services/AppleFoodRecognitionService.swift` | Availability/capability checks, structured local image inference and output validation |
+| `Dayvera/Services/FoundationModelPlanAssistant.swift` | Request-scoped structured timing proposal; no system writes or authority over validation |
+| `Dayvera/Services/CuratedExerciseCatalog.swift` | Reviewed strength metadata plus deterministic cardio, balance and mobility session construction |
 | `Dayvera/Views/NutritionSetupView.swift` | Profile, units, goals, activity, muscle priorities and eligibility |
 | `Dayvera/Views/NutritionView.swift` | Dashboard, intake source/completeness, meals, recovery and adjustment review |
 | `Dayvera/Views/FoodCaptureView.swift`, `MealEditorView.swift` | Camera/Photos selection, candidate matching, portion/label editing and explicit review |
@@ -72,9 +93,10 @@ The original-module database fixture in `DayveraTests/Fixtures` verifies the add
 | `Dayvera/Info.plist`, `Dayvera.xcodeproj`, app assets | Camera purpose text, iOS 27 target, renamed scheme/module and new icon |
 | `Scripts/import_food_catalog.py` | Reproducible normalization of the official USDA source archive |
 | `DayveraTests/NutritionTests.swift` | Calculation/safety, migration, transactional logging, provenance and history regressions |
+| `DayveraTests/PlanEditingTests.swift` | Draft validation, bounded model-output rejection and preservation of application metadata/destinations |
 
 ## Dependencies and boundaries
 
 No third-party package, API key or server is added. System frameworks are SwiftUI, SwiftData, Charts, HealthKit, Foundation Models, PhotosUI, AVFoundation and UIKit, alongside existing EventKit and AlarmKit integration. Xcode 27 and iOS 27 are required for the selected image-capable Foundation Models API. Manual food entry remains available when Apple Intelligence or a suitable model is unavailable. Motivation uses local dates, existing records, native progress views and restrained sensory feedback; it introduces no notification service, animation framework or reward economy.
 
-The import script uses only Python's standard library. All nutritional calculations, validation rules, uncertainty language and supporting sources are documented in [NUTRITION.md](NUTRITION.md). Device-controlled permissions, real meal recognition and provisioning remain separate acceptance checks recorded in [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
+The import script uses only Python's standard library. All nutritional calculations, validation rules, uncertainty language and supporting sources are documented in [NUTRITION.md](NUTRITION.md). Device-controlled permissions, real meal recognition and provisioning remain hands-on acceptance checks in the [TestFlight guide](TESTFLIGHT.md).

@@ -40,8 +40,33 @@ final class WorkoutModelsTests: XCTestCase {
         XCTAssertEqual(result.completeNutritionDays, 5)
         XCTAssertEqual(result.nutritionProgress, 5.0 / 7.0, accuracy: 0.0001)
         XCTAssertEqual(result.recoveryNightsRecorded, 2)
+        XCTAssertEqual(result.recoveryEligibleNights, 6)
+        XCTAssertEqual(result.recoveryProgress, 2.0 / 6.0, accuracy: 0.0001)
         XCTAssertEqual(result.completedTrainingWeeksInLastFour, 2)
         XCTAssertTrue(result.trainingPlanMet)
+    }
+
+    func testWeeklyRhythmRecoveryCoverageExcludesFutureAndDuplicateNights() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        calendar.firstWeekday = 2
+        let now = calendar.date(from: DateComponents(year: 2026, month: 9, day: 9, hour: 12))!
+        let monday = calendar.date(from: DateComponents(year: 2026, month: 9, day: 7, hour: 8))!
+        let mondayDuplicate = calendar.date(from: DateComponents(year: 2026, month: 9, day: 7, hour: 18))!
+        let futureThursday = calendar.date(from: DateComponents(year: 2026, month: 9, day: 10, hour: 8))!
+
+        let result = WeeklyRhythmEngine.summary(
+            now: now,
+            calendar: calendar,
+            sessionDates: [],
+            trainingTarget: 3,
+            completedNutritionDayKeys: [],
+            recoveryDates: [monday, mondayDuplicate, futureThursday]
+        )
+
+        XCTAssertEqual(result.recoveryNightsRecorded, 1)
+        XCTAssertEqual(result.recoveryEligibleNights, 3)
+        XCTAssertEqual(result.recoveryProgress, 1.0 / 3.0, accuracy: 0.0001)
     }
 
     func testWorkoutReadinessDistinguishesMissingDataFromRealZero() {
@@ -939,6 +964,45 @@ final class WorkoutModelsTests: XCTestCase {
         XCTAssertNil(restored.restSourceSetID)
         XCTAssertNil(restored.sets.first?.catalogID)
         XCTAssertNil(restored.sets.first?.loadUnit)
+    }
+
+    func testGuidedPlannerBuildsDistinctReviewedModalities() throws {
+        let planner = GuidedWorkoutPlanner()
+        let equipment: Set<EquipmentID> = [.bodyweight, .resistanceBand, .cardioMachine]
+
+        for modality in [TrainingModality.cardio, .balance, .flexibilityMobility] {
+            let plan = try planner.build(
+                modality: modality,
+                minutes: 30,
+                equipment: equipment,
+                level: .beginner,
+                effort: .asPlanned
+            )
+            XCTAssertEqual(plan.modality, modality)
+            XCTAssertFalse(plan.exercises.isEmpty)
+            XCTAssertTrue(plan.exercises.allSatisfy { $0.modality == modality })
+            XCTAssertTrue(plan.exercises.allSatisfy { ($0.durationSeconds ?? 0) > 0 })
+        }
+    }
+
+    func testLegacyTrainingProfileDefaultsToStrengthResistanceAndBeginner() throws {
+        let data = """
+        {
+          "goal":"strengthAndMuscle",
+          "targetSessionsPerWeek":4,
+          "loadUnit":"pounds",
+          "equipmentProfiles":[],
+          "activeEquipmentProfileID":"full-gym",
+          "preferredExerciseIDs":[],
+          "excludedExerciseIDs":[],
+          "excludedMovementPatterns":[],
+          "onDevicePersonalizationEnabled":false
+        }
+        """.data(using: .utf8)!
+
+        let profile = try JSONDecoder().decode(TrainingProfile.self, from: data)
+        XCTAssertEqual(profile.preferredModality, .strengthResistance)
+        XCTAssertEqual(profile.experienceLevel, .beginner)
     }
 
     private func session(id: UUID, day: Int, sets: [CompletedSet]) -> WorkoutSessionRecord {

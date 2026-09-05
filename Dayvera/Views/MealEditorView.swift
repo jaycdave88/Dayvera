@@ -6,6 +6,7 @@ enum MealEditorInitialAction {
 
 struct MealEditorView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var typeSize
     @EnvironmentObject private var nutrition: NutritionModel
     let existing: MealRecord?
     @State private var name: String
@@ -21,9 +22,9 @@ struct MealEditorView: View {
     @State private var reviewed = false
     @State private var error: String?
     private let initialAction: MealEditorInitialAction?
-    private let onSaved: (() -> Void)?
+    private let onSaved: ((MealSaveResult) -> Void)?
 
-    init(existing: MealRecord? = nil, date: Date = .now, capture: Bool = false, initialAction: MealEditorInitialAction? = nil, onSaved: (() -> Void)? = nil) {
+    init(existing: MealRecord? = nil, date: Date = .now, capture: Bool = false, initialAction: MealEditorInitialAction? = nil, onSaved: ((MealSaveResult) -> Void)? = nil) {
         self.existing = existing; _name = State(initialValue: existing?.name ?? "Meal")
         _date = State(initialValue: existing?.date ?? date)
         _entries = State(initialValue: existing?.entries ?? [])
@@ -31,7 +32,7 @@ struct MealEditorView: View {
         self.onSaved = onSaved
     }
 
-    init(copying meal: MealRecord, date: Date, onSaved: (() -> Void)? = nil) {
+    init(copying meal: MealRecord, date: Date, onSaved: ((MealSaveResult) -> Void)? = nil) {
         existing = nil
         _name = State(initialValue: meal.name)
         _date = State(initialValue: date)
@@ -59,7 +60,7 @@ struct MealEditorView: View {
                                 Text("Estimated portion · ~\(Int(candidate.estimatedGrams)) g").foregroundStyle(.secondary)
                                 Text("Food match needed").font(.subheadline.weight(.semibold)).foregroundStyle(Color.coachAmber)
                                 Text(candidate.question).font(.footnote)
-                                HStack {
+                                (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout(spacing: 8))) {
                                     Button("Find Food") { searchRequest = FoodSearchRequest(candidate: candidate) }.buttonStyle(.borderedProminent)
                                     Button("Remove", role: .destructive) { candidates.removeAll { $0.id == candidate.id } }.buttonStyle(.borderless)
                                 }
@@ -73,7 +74,10 @@ struct MealEditorView: View {
                         Button { editEntry = entry } label: {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(entry.name).foregroundStyle(.primary)
-                                Text("\(entry.grams.formatted(.number.precision(.fractionLength(0...1)))) g · \(Int(entry.nutrients.calories.rounded())) kcal").font(.subheadline)
+                                Text(entry.unit == "g" && entry.count == 1
+                                     ? "\(entry.quantityDescription) · \(Int(entry.nutrients.calories.rounded())) kcal"
+                                     : "\(entry.quantityDescription) · \(entry.grams.formatted(.number.precision(.fractionLength(0...1)))) g · \(Int(entry.nutrients.calories.rounded())) kcal")
+                                    .font(.subheadline).fixedSize(horizontal: false, vertical: true)
                                 Text(entry.provenance.rawValue).font(.caption).foregroundStyle(.secondary)
                             }
                         }
@@ -98,8 +102,8 @@ struct MealEditorView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save meal") {
                         do {
-                            try nutrition.saveMeal(id: existing?.id, name: name, date: date, entries: entries, photo: photo)
-                            onSaved?()
+                            let result = try nutrition.saveMeal(id: existing?.id, name: name, date: date, entries: entries, photo: photo)
+                            onSaved?(result)
                             dismiss()
                         }
                         catch { self.error = error.localizedDescription }
@@ -156,6 +160,8 @@ struct FoodSearchView: View {
     @State private var query = ""
     @State private var selection: CatalogFood?
     @State private var grams = 100.0
+    @State private var selectedPortion: FoodPortion?
+    @State private var portionCount = 1.0
     @State private var custom = false
     @State private var error: String?
     var body: some View {
@@ -170,9 +176,36 @@ struct FoodSearchView: View {
                 if let selection {
                     Section("Confirm the match and portion") {
                         Text(selection.name).font(.headline)
-                        HStack { Text("Grams"); TextField("Grams", value: $grams, format: .number).keyboardType(.decimalPad).multilineTextAlignment(.trailing) }
+                        HStack {
+                            Text("Grams")
+                            TextField("Grams", value: Binding(get: { grams }, set: { grams = $0; selectedPortion = nil }), format: .number)
+                                .keyboardType(.decimalPad).multilineTextAlignment(.trailing)
+                        }
                         ForEach(selection.portions, id: \.self) { portion in
-                            Button("\(portion.label) · \(portion.grams.formatted()) g") { grams = portion.grams }
+                            Button {
+                                selectedPortion = portion
+                                portionCount = max((request.candidate?.estimatedGrams ?? portion.grams) / portion.grams, 0.01)
+                                grams = portion.grams * portionCount
+                            } label: {
+                                HStack {
+                                    Text(portion.label).fixedSize(horizontal: false, vertical: true)
+                                    Spacer()
+                                    Text("\(portion.grams.formatted()) g").foregroundStyle(.secondary)
+                                    if selectedPortion == portion { Image(systemName: "checkmark") }
+                                }
+                            }
+                        }
+                        if let selectedPortion {
+                            HStack {
+                                Text("Count")
+                                TextField("Count", value: Binding(get: { portionCount }, set: {
+                                    portionCount = $0
+                                    grams = selectedPortion.grams * $0
+                                }), format: .number.precision(.fractionLength(0...2)))
+                                    .keyboardType(.decimalPad).multilineTextAlignment(.trailing)
+                            }
+                            Text("\(portionCount.formatted(.number.precision(.fractionLength(0...2)))) × \(selectedPortion.label) = \(grams.formatted(.number.precision(.fractionLength(0...1)))) g")
+                                .font(.footnote).foregroundStyle(.secondary)
                         }
                         if let question = request.candidate?.question { Text(question).font(.footnote).foregroundStyle(.secondary) }
                         let preview = selection.nutrients.scaled(max(grams, 0) / 100)
@@ -185,15 +218,23 @@ struct FoodSearchView: View {
                         Button("Add this food") {
                             do {
                                 guard let catalog = nutrition.catalog else { return }
-                                let entry = try catalog.entry(food: selection, grams: grams, photo: request.candidate != nil, note: request.candidate?.question ?? "")
+                                let entry: FoodEntry
+                                if let selectedPortion {
+                                    entry = try catalog.entry(food: selection, portion: selectedPortion, count: portionCount,
+                                                              photo: request.candidate != nil, note: request.candidate?.question ?? "")
+                                } else {
+                                    entry = try catalog.entry(food: selection, grams: grams, photo: request.candidate != nil, note: request.candidate?.question ?? "")
+                                }
                                 onAdd(entry); dismiss()
                             } catch { self.error = error.localizedDescription }
                         }.buttonStyle(.borderedProminent)
+                            .disabled(!grams.isFinite || !(0.1...10_000).contains(grams) ||
+                                      (selectedPortion != nil && (!portionCount.isFinite || !(0.01...1000).contains(portionCount))))
                     }
                 }
                 Section("Database matches") {
                     ForEach(nutrition.catalog?.search(query) ?? []) { food in
-                        Button { selection = food } label: {
+                        Button { selection = food; selectedPortion = nil; portionCount = 1 } label: {
                             VStack(alignment: .leading) {
                                 Text(food.name).foregroundStyle(.primary)
                                 Text("\(Int(food.nutrients.calories)) kcal / 100 g · FDC \(food.id)").font(.caption).foregroundStyle(.secondary)
@@ -223,6 +264,7 @@ struct FoodSearchView: View {
 
 struct FoodEntryEditor: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State var entry: FoodEntry
     var isNew = false
     let onSave: (FoodEntry) -> Void
@@ -233,11 +275,16 @@ struct FoodEntryEditor: View {
             Form {
                 Section {
                     TextField("Food name", text: $entry.name)
-                    number("Portion (grams)", value: Binding(get: { entry.grams }, set: { value in
-                        if !isNew && entry.grams > 0 && value > 0 { entry.nutrients = entry.nutrients.scaled(value / entry.grams) }
-                        entry.grams = value
+                    number("Amount", value: Binding(get: { entry.amount }, set: {
+                        updateQuantity(amount: $0, unit: entry.unit, count: entry.count)
                     }))
-                    if !isNew { Text("Changing the portion scales this entry’s saved nutrient values.").font(.footnote).foregroundStyle(.secondary) }
+                    LabeledContent("Unit", value: entry.unit)
+                    number("Count", value: Binding(get: { entry.count }, set: {
+                        updateQuantity(amount: entry.amount, unit: entry.unit, count: $0)
+                    }))
+                    LabeledContent("Canonical weight", value: "\(entry.grams.formatted(.number.precision(.fractionLength(0...1)))) g")
+                    Text("Dayvera stores grams for nutrient math. Amount, unit, and count preserve how you measured the food.").font(.footnote).foregroundStyle(.secondary)
+                    if !isNew { Text("Changing the quantity scales this entry’s saved nutrient values.").font(.footnote).foregroundStyle(.secondary) }
                 }
                 Section("Values for this entire portion") {
                     number("Calories (kcal)", value: nutrientBinding(\.calories))
@@ -255,7 +302,7 @@ struct FoodEntryEditor: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) { Button("Save") {
                     guard !entry.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                          entry.grams.isFinite, (0.1...10_000).contains(entry.grams), entry.nutrients.isValid else {
+                          entry.quantityIsValid, entry.nutrients.isValid else {
                         error = "Check the food name, portion and nonnegative nutrient values."; return
                     }
                     onSave(entry); dismiss()
@@ -267,9 +314,21 @@ struct FoodEntryEditor: View {
         Binding(get: { entry.nutrients[keyPath: keyPath] }, set: { value in
             entry.nutrients[keyPath: keyPath] = value
             entry.provenance = .manual; entry.catalogID = nil; entry.catalogVersion = nil
+            valuesConfirmed = false
         })
     }
+    private func updateQuantity(amount: Double, unit: String, count: Double) {
+        entry.updateQuantity(amount: amount, unit: unit, count: count, gramsPerUnit: entry.gramsPerUnit)
+        valuesConfirmed = false
+    }
     private func number(_ title: String, value: Binding<Double>) -> some View {
-        HStack { Text(title); Spacer(); TextField(title, value: value, format: .number.precision(.fractionLength(0...1))).keyboardType(.decimalPad).multilineTextAlignment(.trailing).frame(maxWidth: 100) }
+        (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6)) : AnyLayout(HStackLayout())) {
+            Text(title)
+            if !typeSize.isAccessibilitySize { Spacer() }
+            TextField(title, value: value, format: .number.precision(.fractionLength(0...2)))
+                .keyboardType(.decimalPad)
+                .multilineTextAlignment(typeSize.isAccessibilitySize ? .leading : .trailing)
+                .frame(maxWidth: typeSize.isAccessibilitySize ? .infinity : 120)
+        }
     }
 }

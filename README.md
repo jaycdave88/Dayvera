@@ -13,6 +13,7 @@ how hard should I train, am I eating enough for my goal, and how well am I recov
   <img src="https://img.shields.io/badge/iOS-27%2B-000000?logo=apple&logoColor=white" alt="iOS 27 or newer" />
   <img src="https://img.shields.io/badge/UI-SwiftUI-F05138?logo=swift&logoColor=white" alt="SwiftUI" />
   <a href="https://github.com/jaycdave88/Dayvera/actions/workflows/repository-hygiene.yml"><img src="https://github.com/jaycdave88/Dayvera/actions/workflows/repository-hygiene.yml/badge.svg" alt="Repository hygiene" /></a>
+  <a href="https://github.com/jaycdave88/Dayvera/actions/workflows/ios.yml"><img src="https://github.com/jaycdave88/Dayvera/actions/workflows/ios.yml/badge.svg" alt="iOS 27 build and tests" /></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="Apache 2.0 license" /></a>
 </p>
 
@@ -31,10 +32,10 @@ how hard should I train, am I eating enough for my goal, and how well am I recov
 Training, food, sleep, and recovery are often tracked in separate places. Dayvera brings them into one daily decision without pretending that a wearable reading, calorie formula, or food photo is perfectly precise.
 
 - **Today:** understand what matters now, start a recovery-aware workout, and see this week's rhythm without being punished for a missed day.
-- **Plan:** work backward from tomorrow's first commitment and review exactly which alarm and Calendar items will be created before applying them.
-- **Train:** start or resume a protected workout draft, follow reviewed exercises, and compare progress using clearly labeled estimates.
-- **Nutrition:** estimate a bounded calorie and macro range, photograph or enter meals, confirm food matches and portions, and see what remains today.
-- **Progress:** explore recovery, training, and nutrition trends with missing data, sources, units, and uncertainty kept visible.
+- **Plan:** work backward from tomorrow's first commitment, adjust the draft manually or request a bounded on-device timing suggestion, then review exactly which alarm and Calendar items will be created before applying them.
+- **Train:** build cardio, strength/resistance, balance, or flexibility/mobility sessions around your available time, equipment, and experience level, or resume a protected workout draft.
+- **Nutrition:** estimate a bounded calorie and macro range, photograph or enter meals, preserve real-world quantities such as “2 × 1 cup,” and review today or any saved day.
+- **Progress:** move between Recovery, Training, and Nutrition in one history destination with missing data, sources, units, and uncertainty kept visible.
 
 Dayvera uses light motivation rather than rigid streaks: Weekly Rhythm reports completed training, confirmed nutrition days, and recorded recovery nights. It preserves progress when life interrupts a routine and welcomes returning users without guilt or artificial urgency.
 
@@ -68,10 +69,21 @@ Dayvera uses light motivation rather than rigid streaks: Weekly Rhythm reports c
 
 <p align="center"><sub>Current Penpot-aligned iOS 27 simulator captures use synthetic data, not personal health information. <a href="./QA/README.md">Open the full QA gallery and validation notes</a>.</sub></p>
 
+<p align="center"><strong>Personalize → review → keep the record</strong></p>
+
+<p align="center">
+  <a href="./QA/Screenshots/dayvera-plan-editor-ai-dark.png"><img src="./QA/Screenshots/dayvera-plan-editor-ai-dark.png" width="260" alt="Dayvera Plan editor comparing calculated times with an editable draft and optional on-device suggestion" /></a>
+  <a href="./QA/Screenshots/dayvera-workout-builder-dark.png"><img src="./QA/Screenshots/dayvera-workout-builder-dark.png" width="260" alt="Dayvera workout builder with workout type, experience, time, effort, and available equipment" /></a>
+  <a href="./QA/Screenshots/dayvera-meal-history-dark.png"><img src="./QA/Screenshots/dayvera-meal-history-dark.png" width="260" alt="Dayvera Meal History grouping saved meals by day with calories and protein" /></a>
+</p>
+
+<p align="center"><sub>Edit a plan before applying it, build around the equipment you actually have, and confirm that saved meals remain easy to find.</sub></p>
+
 ## Nutrition and food logging
 
 - Photograph food with Apple’s on-device image model, then match foods and review portions before saving.
 - Search the bundled USDA catalog, add label values, repeat meals, or select one Apple Health dietary source per day.
+- Record amount, unit, and count while Dayvera keeps canonical grams for consistent nutrient math; open Meal History to revisit any saved day.
 - Build conservative calorie and macro targets for muscle gain, recomposition, maintenance, or fat loss.
 - Review weight, intake, measurements, recovery, and gradual calorie suggestions.
 - Explore what-if changes without altering your current target until you apply them.
@@ -85,7 +97,7 @@ Photo recognition is assistance, not an automatic calorie source. When the on-de
 - **Read:** normalize 16 Apple Health types across recovery, safety, training, and body context; inspect every source observed in the current Health window.
 - **Decide:** build three validated daily workout options from recovery, training history, goals, available time, equipment, and exclusions.
 - **Plan:** work backward from tomorrow’s commitments, save full workout details to one calendar, and add optional privacy-safe “Busy” copies to others. [See Calendar Setup](./QA/Screenshots/dayvera-final-calendar-setup-dark.png).
-- **Train:** build templates from an illustrated exercise catalog; log previous performance, load, reps, completed sets, safe progression cues, rest time, and resumable drafts.
+- **Train:** choose cardio, strength/resistance, balance, or flexibility/mobility; filter the prescription by available equipment and beginner/intermediate/advanced level; build strength templates from the illustrated catalog; and keep resumable drafts.
 - **Nutrition:** compare an estimated target with reviewed intake, keep one authoritative source per day, and use complete days plus weight observations as evidence for gradual changes that you explicitly accept.
 - **Progress:** compare 7- or 28-day recovery trends, training sessions, working sets, estimated 1RM trends and bests, and provenance-aware body measurements.
 
@@ -94,10 +106,11 @@ Eight Sleep or Hume scores remain unavailable, and the app never calls their
 private APIs. Alarms and Calendar events are created or replaced only after
 confirmation; Undo removes only app-created entries.
 
-Dayvera's assistive features solve two narrow problems while keeping the user in control:
+Dayvera's assistive features solve three narrow problems while keeping the user in control:
 
 - **Choosing among safe workout options:** the deterministic planner first creates three valid candidates from reviewed exercises and hard safety rules. Optional on-device assistance may rank those candidates and improve the explanation. It cannot invent an exercise, change an exclusion, or relax a recovery or volume boundary.
 - **Reducing food-entry work:** on-device photo analysis may suggest food names and rough portions. Nutrients come only from the reviewed USDA catalog match, a package label, a manual value, or the selected supported Health source. A photo never saves a meal by itself.
+- **Translating a timing preference:** inside Edit Plan, request-scoped on-device assistance may translate “start 30 minutes later” into bounded draft shifts. Deterministic validation still enforces the sleep window, workout duration, wake order, and ready deadline. The suggestion cannot schedule anything and must be accepted into the draft before the normal Apply review.
 
 Both features fall back to a complete manual path. Dayvera does not create a long-range periodized program or apply suggested weight or calorie changes automatically.
 
@@ -156,8 +169,7 @@ Dayvera is wellness software, not medical advice. See the
 | [Rebrand compatibility](REBRAND.md) | Identity and data continuity |
 | [QA gallery](QA/README.md) | Dark, light, compact-width, and accessibility captures |
 | [Developer guide](DEVELOPMENT.md) | Build, test, and deterministic demo commands |
-| [Implementation status](IMPLEMENTATION_STATUS.md) | Verified behavior and remaining device acceptance |
-| [UX flow contract](UX_REDESIGN_HANDOFF.md) | Screen ownership, flows, and acceptance criteria |
+| [External TestFlight preparation](TESTFLIGHT.md) | Signing, App Store Connect, archive, beta review, and device acceptance checklist |
 | [Security](SECURITY.md) | Repository hygiene and local-data hardening |
 | [Privacy policy](PRIVACY.md) | What the app reads, stores, writes, and never sends |
 

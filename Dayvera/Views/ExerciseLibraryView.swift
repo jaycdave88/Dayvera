@@ -408,7 +408,15 @@ struct ExerciseLibraryView: View {
                 difficulty: selectedDifficulty
             )
         }
-        .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        .sorted { lhs, rhs in
+            let query = normalizedSearchQuery
+            if !query.isEmpty {
+                let leftRank = searchRank(lhs, query: query)
+                let rightRank = searchRank(rhs, query: query)
+                if leftRank != rightRank { return leftRank < rightRank }
+            }
+            return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+        }
     }
 
     private var alphabetSections: [ExerciseAlphabetSection] {
@@ -440,7 +448,27 @@ struct ExerciseLibraryView: View {
     }
 
     private var difficultyOptions: [String] {
-        sortedUnique(store.exercises.map(\.difficultyTitle))
+        let values = Set(store.exercises.map(\.difficultyTitle))
+        let preferred = ["Beginner", "Intermediate", "Advanced", "Not Rated", "Not rated"]
+        var ordered = preferred.filter(values.contains)
+        ordered.append(contentsOf: values.subtracting(ordered).sorted())
+        return ordered
+    }
+
+    private var normalizedSearchQuery: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .lowercased()
+    }
+
+    private func searchRank(_ exercise: ExerciseDefinition, query: String) -> Int {
+        let name = exercise.name
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .lowercased()
+        if name == query { return 0 }
+        if name.hasPrefix(query) { return 1 }
+        if name.contains(query) { return 2 }
+        return 3
     }
 
     private var activeFilterCount: Int {

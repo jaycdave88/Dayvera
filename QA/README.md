@@ -6,6 +6,14 @@ The gallery distinguishes current captures from historical baselines. Screenshot
 
 ## Nutrition release · iOS 27 · iPhone 17 Pro
 
+### Current planning, workout-builder, and meal-history additions
+
+- [Editable Plan draft and optional on-device suggestion · dark](Screenshots/dayvera-plan-editor-ai-dark.png)
+- [Guided workout builder · dark](Screenshots/dayvera-workout-builder-dark.png)
+- [All-days Meal History · dark](Screenshots/dayvera-meal-history-dark.png)
+
+These captures come from the final Xcode 27 simulator build with deterministic data. The complete suite passed 226 tests with zero failures. The Plan image shows a draft that remains local until Save Draft and then still requires the existing Apply confirmation; the workout image shows the input controls before generation; Meal History shows where a saved meal can be reopened by day.
+
 - [Nutrition dashboard · dark](Screenshots/dayvera-nutrition-dark.png)
 - [What-if calculator · dark](Screenshots/dayvera-whatif-dark.png)
 - [Weight and intake progress · dark](Screenshots/dayvera-nutrition-progress-dark.png)

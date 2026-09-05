@@ -14,6 +14,7 @@ struct DashboardView: View {
     let returningExperience: ReturningExperience
     let onOpenTrain: () -> Void
     let onOpenPlan: () -> Void
+    let onOpenNutrition: () -> Void
     let onOpenRecoveryTrends: () -> Void
     let onOpenDataSources: () -> Void
 
@@ -21,12 +22,14 @@ struct DashboardView: View {
         returningExperience: ReturningExperience = .none,
         onOpenTrain: @escaping () -> Void = {},
         onOpenPlan: @escaping () -> Void = {},
+        onOpenNutrition: @escaping () -> Void = {},
         onOpenRecoveryTrends: @escaping () -> Void = {},
         onOpenDataSources: @escaping () -> Void = {}
     ) {
         self.returningExperience = returningExperience
         self.onOpenTrain = onOpenTrain
         self.onOpenPlan = onOpenPlan
+        self.onOpenNutrition = onOpenNutrition
         self.onOpenRecoveryTrends = onOpenRecoveryTrends
         self.onOpenDataSources = onOpenDataSources
     }
@@ -44,7 +47,7 @@ struct DashboardView: View {
                 } else {
                     connectCard
                 }
-                NutritionTodayCard()
+                NutritionTodayCard(onOpenNutrition: onOpenNutrition)
                 morningPlanCard
                 weeklyRhythmCard
                 if weeklyRhythm.trainingPlanMet, !trainingMilestoneAcknowledged {
@@ -383,7 +386,7 @@ struct DashboardView: View {
             sessionDates: sessions.map(\.endedAt),
             trainingTarget: appModel.trainingProfile.targetSessionsPerWeek,
             completedNutritionDayKeys: Set(nutrition.days.filter(\.isComplete).map(\.dayKey)),
-            recoveryDates: appModel.snapshot.sleepTrend.points.compactMap { $0.value == nil ? nil : $0.date }
+            recoveryDates: appModel.snapshot.sleepSessions.map(\.endDate)
         )
     }
 
@@ -438,8 +441,8 @@ struct DashboardView: View {
                 }
                 WeeklyRhythmRow(
                     title: "Recovery coverage",
-                    value: "\(weeklyRhythm.recoveryNightsRecorded) nights recorded",
-                    progress: nil,
+                    value: "\(weeklyRhythm.recoveryNightsRecorded) of \(weeklyRhythm.recoveryEligibleNights) eligible nights",
+                    progress: weeklyRhythm.recoveryProgress,
                     tint: .coachAmber
                 )
                 if let momentum = weeklyRhythm.momentumText {

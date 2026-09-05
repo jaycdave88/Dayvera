@@ -442,8 +442,18 @@ private struct TrainingPreferencesView: View {
 
     var body: some View {
         Form {
-            Section("Goal") {
-                Picker("Training Goal", selection: $profile.goal) {
+            Section {
+                Picker("Default workout type", selection: $profile.preferredModality) {
+                    ForEach(TrainingModality.allCases) { modality in
+                        Text(modality.title).tag(modality)
+                    }
+                }
+                Picker("Experience level", selection: $profile.experienceLevel) {
+                    ForEach(WorkoutExperienceLevel.allCases) { level in
+                        Text(level.title).tag(level)
+                    }
+                }
+                Picker("Strength emphasis", selection: $profile.goal) {
                     ForEach(TrainingGoal.allCases, id: \.self) { goal in
                         Text(goal.title).tag(goal)
                     }
@@ -453,6 +463,10 @@ private struct TrainingPreferencesView: View {
                     value: $profile.targetSessionsPerWeek,
                     in: 2...6
                 )
+            } header: {
+                Text("Training")
+            } footer: {
+                Text("Strength emphasis is used only for strength and resistance sessions.")
             }
 
             Section("Workout Defaults") {

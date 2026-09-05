@@ -35,6 +35,29 @@ struct FoodCatalogStore: Sendable {
                          catalogID: food.id, catalogVersion: version, provenance: photo ? .photo : .database, portionNote: note)
     }
 
+    func entry(food: CatalogFood, portion: FoodPortion, count: Double = 1, photo: Bool = false, note: String = "") throws -> FoodEntry {
+        guard foods.contains(where: { $0.id == food.id }), food.portions.contains(portion),
+              count.isFinite, (0.01...1000).contains(count), portion.grams.isFinite, portion.grams > 0 else {
+            throw NutritionError.invalid("Select a catalog portion and a valid count.")
+        }
+        let quantity = Self.quantity(from: portion)
+        let grams = portion.grams * count
+        let portionNote = [note, "Catalog portion: \(portion.label)"].filter { !$0.isEmpty }.joined(separator: " · ")
+        return FoodEntry(name: food.name, grams: grams, nutrients: food.nutrients.scaled(grams / 100),
+                         catalogID: food.id, catalogVersion: version, provenance: photo ? .photo : .database,
+                         portionNote: portionNote, amount: quantity.amount, unit: quantity.unit,
+                         count: count, gramsPerUnit: portion.grams / quantity.amount)
+    }
+
+    static func quantity(from portion: FoodPortion) -> (amount: Double, unit: String) {
+        let pieces = portion.label.split(maxSplits: 1, whereSeparator: { $0.isWhitespace })
+        guard let first = pieces.first, let amount = Double(first), amount > 0 else {
+            return (1, portion.label)
+        }
+        let unit = pieces.count > 1 ? String(pieces[1]) : "portion"
+        return (amount, unit)
+    }
+
     private static func normalize(_ text: String) -> String {
         text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
             .replacingOccurrences(of: "[^a-z0-9 ]", with: " ", options: .regularExpression)

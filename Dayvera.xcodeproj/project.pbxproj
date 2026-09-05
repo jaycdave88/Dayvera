@@ -45,6 +45,9 @@
 		B00000000000000000000036 /* FoundationModelWorkoutPersonalizerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000040 /* FoundationModelWorkoutPersonalizerTests.swift */; };
 		B00000000000000000000037 /* WorkoutPlanningEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000041 /* WorkoutPlanningEngineTests.swift */; };
 		D7A100000000000000000001 /* DailyTrainingStateBuilderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7A100000000000000000002 /* DailyTrainingStateBuilderTests.swift */; };
+		E7A100000000000000000001 /* PlanEditingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7A100000000000000000011 /* PlanEditingModels.swift */; };
+		E7A100000000000000000002 /* FoundationModelPlanAssistant.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7A100000000000000000012 /* FoundationModelPlanAssistant.swift */; };
+		E7A100000000000000000003 /* PlanEditingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7A100000000000000000013 /* PlanEditingTests.swift */; };
 		B90000000000000000000001 /* AppBrand.swift */ = {isa = PBXBuildFile; fileRef = F90000000000000000000001; };
 		B90000000000000000000002 /* NutritionModel.swift */ = {isa = PBXBuildFile; fileRef = F90000000000000000000002; };
 		B90000000000000000000003 /* LegacyCompatibility.swift */ = {isa = PBXBuildFile; fileRef = F90000000000000000000003; };
@@ -120,6 +123,9 @@ B90000000000000000009999 /* NutritionTests.swift */ = {isa = PBXBuildFile; fileR
 		F00000000000000000000040 /* FoundationModelWorkoutPersonalizerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoundationModelWorkoutPersonalizerTests.swift; sourceTree = "<group>"; };
 		F00000000000000000000041 /* WorkoutPlanningEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutPlanningEngineTests.swift; sourceTree = "<group>"; };
 		D7A100000000000000000002 /* DailyTrainingStateBuilderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyTrainingStateBuilderTests.swift; sourceTree = "<group>"; };
+		E7A100000000000000000011 /* PlanEditingModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanEditingModels.swift; sourceTree = "<group>"; };
+		E7A100000000000000000012 /* FoundationModelPlanAssistant.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoundationModelPlanAssistant.swift; sourceTree = "<group>"; };
+		E7A100000000000000000013 /* PlanEditingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanEditingTests.swift; sourceTree = "<group>"; };
 		F90000000000000000000001 /* AppBrand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Dayvera/App/AppBrand.swift"; sourceTree = SOURCE_ROOT; };
 		F90000000000000000000002 /* NutritionModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Dayvera/App/NutritionModel.swift"; sourceTree = SOURCE_ROOT; };
 		F90000000000000000000003 /* LegacyCompatibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Dayvera/App/LegacyCompatibility.swift"; sourceTree = SOURCE_ROOT; };
@@ -201,6 +207,7 @@ F90000000000000000009999 /* NutritionTests.swift */ = {isa = PBXFileReference; l
 				F00000000000000000000026 /* ExerciseCatalogModels.swift */,
 				F00000000000000000000032 /* WorkoutPlanningModels.swift */,
 				F00000000000000000000033 /* TrainingProfile.swift */,
+				E7A100000000000000000011 /* PlanEditingModels.swift */,
 			);
 			path = Domain;
 			sourceTree = "<group>";
@@ -219,6 +226,7 @@ F90000000000000000009999 /* NutritionTests.swift */ = {isa = PBXFileReference; l
 				F00000000000000000000036 /* FoundationModelWorkoutPersonalizer.swift */,
 				F00000000000000000000037 /* WorkoutPersonalizationRequestBuilder.swift */,
 				F00000000000000000000038 /* WorkoutPlanningEngine.swift */,
+				E7A100000000000000000012 /* FoundationModelPlanAssistant.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -260,6 +268,7 @@ F90000000000000000009999 /* NutritionTests.swift */ = {isa = PBXFileReference; l
 				F00000000000000000000040 /* FoundationModelWorkoutPersonalizerTests.swift */,
 				F00000000000000000000041 /* WorkoutPlanningEngineTests.swift */,
 				D7A100000000000000000002 /* DailyTrainingStateBuilderTests.swift */,
+				E7A100000000000000000013 /* PlanEditingTests.swift */,
 			);
 			path = DayveraTests;
 			sourceTree = "<group>";
@@ -447,6 +456,8 @@ F90000000000000000009999,
 				B00000000000000000000033 /* WorkoutPersonalizationRequestBuilder.swift in Sources */,
 				B00000000000000000000034 /* WorkoutPlanningEngine.swift in Sources */,
 				B00000000000000000000035 /* TodayWorkoutRecommendationView.swift in Sources */,
+				E7A100000000000000000001 /* PlanEditingModels.swift in Sources */,
+				E7A100000000000000000002 /* FoundationModelPlanAssistant.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -463,6 +474,7 @@ B90000000000000000009999,
 				B00000000000000000000036 /* FoundationModelWorkoutPersonalizerTests.swift in Sources */,
 				B00000000000000000000037 /* WorkoutPlanningEngineTests.swift in Sources */,
 				D7A100000000000000000001 /* DailyTrainingStateBuilderTests.swift in Sources */,
+				E7A100000000000000000003 /* PlanEditingTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -528,7 +540,7 @@ B90000000000000000009999,
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Dayvera/Dayvera.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
@@ -566,7 +578,7 @@ B90000000000000000009999,
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Dayvera/Dayvera.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;

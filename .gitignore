@@ -1,6 +1,15 @@
 # Local indexing / context-engine data
 .zvec-grep/
 
+# Local design briefs, agent audits, and point-in-time handoffs
+*_MASTER_BRIEF.md
+*_CODE_AUDIT.md
+*_DESIGN_HANDOFF.md
+*_UX_REDESIGN_SPEC.md
+*_UX_REDESIGN_HANDOFF.md
+*_LAUNCH_MOTIVATION_AUDIT.md
+IMPLEMENTATION_STATUS.md
+
 # macOS
 .DS_Store
 

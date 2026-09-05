@@ -734,7 +734,9 @@ private struct ProgressDetailView<SectionPicker: View>: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
                 Text(session.templateName).font(.headline)
-                Text("\(session.startedAt.shortDay) · \(Int(session.durationMinutes)) min · \(session.sets.filter { !$0.isWarmup }.count) working sets")
+                Text(session.modality == .strengthResistance
+                     ? "\(session.startedAt.shortDay) · \(Int(session.durationMinutes)) min · \(session.sets.filter { !$0.isWarmup }.count) working sets"
+                     : "\(session.startedAt.shortDay) · \(Int(session.durationMinutes)) min · \(session.modality.title)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

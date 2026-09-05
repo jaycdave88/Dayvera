@@ -16,8 +16,16 @@ struct NutritionView: View {
     @State private var showWhatIf = false
     @State private var showSources = false
     @State private var showProgress = false
+    @State private var showMealHistory = false
+    @State private var savedMeal: MealSaveResult?
+    @State private var highlightedMealID: UUID?
     @State private var completionFeedback = 0
     @Query(sort: \WorkoutSessionRecord.startedAt, order: .reverse) private var sessions: [WorkoutSessionRecord]
+    private let onOpenProgress: (() -> Void)?
+
+    init(onOpenProgress: (() -> Void)? = nil) {
+        self.onOpenProgress = onOpenProgress
+    }
 
     var body: some View {
         ScrollView {
@@ -32,15 +40,12 @@ struct NutritionView: View {
                         .font(.headline).padding(.horizontal, 4)
                 }
                 if !nutrition.profile.completedSetup { setupCard }
+                if let savedMeal, savedMeal.dayKey == NutritionStore.dayKey(date) { mealSavedBanner(savedMeal) }
                 dailySummaryCard
                 dayStatusCard
                 mealsCard
                 if nutrition.target(on: date) != nil {
-                    NavigationLink { NutritionProgressView() } label: {
-                        CoachCard { HStack { Label("Weight, measurements & progress", systemImage: "chart.xyaxis.line"); Spacer(); Image(systemName: "chevron.right") } }
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityHint("Opens nutrition progress")
+                    nutritionProgressLink
                     recoveryCard
                     adjustmentCard
                 }
@@ -61,18 +66,40 @@ struct NutritionView: View {
             if ProcessInfo.processInfo.arguments.contains("--show-nutrition-whatif") { showWhatIf = true }
             if ProcessInfo.processInfo.arguments.contains("--show-nutrition-profile") { showSetup = true }
             if ProcessInfo.processInfo.arguments.contains("--show-nutrition-progress") { showProgress = true }
+            if ProcessInfo.processInfo.arguments.contains("--show-meal-history") { showMealHistory = true }
             #endif
         }
         .navigationDestination(isPresented: $showProgress) { NutritionProgressView() }
         .sheet(isPresented: $showSetup) { NutritionSetupView(draft: startingProfile) }
-        .sheet(isPresented: $showLogFood) { LogFoodLauncherView(date: date) }
-        .sheet(item: $editMeal) { MealEditorView(existing: $0) }
-        .sheet(item: $copyMeal) { MealEditorView(copying: $0, date: date) }
+        .sheet(isPresented: $showLogFood) { LogFoodLauncherView(date: date, onMealSaved: handleMealSaved) }
+        .sheet(item: $editMeal) { MealEditorView(existing: $0, onSaved: handleMealSaved) }
+        .sheet(item: $copyMeal) { MealEditorView(copying: $0, date: date, onSaved: handleMealSaved) }
         .sheet(isPresented: $showTotals) { NutritionDailyTotalView(date: date) }
         .sheet(isPresented: $showMeasurements) { NutritionMeasurementView() }
         .sheet(isPresented: $showWhatIf) { NutritionWhatIfView() }
         .sheet(isPresented: $showSources) { NutritionSourcesView() }
+        .sheet(isPresented: $showMealHistory) { NutritionMealHistoryView(onSelectDay: { selected in date = selected; showMealHistory = false }) }
         .sensoryFeedback(.success, trigger: completionFeedback)
+    }
+    @ViewBuilder private var nutritionProgressLink: some View {
+        if let onOpenProgress {
+            Button(action: onOpenProgress) { nutritionProgressLabel }
+                .buttonStyle(.plain)
+                .accessibilityHint("Opens Nutrition in the Progress tab")
+        } else {
+            NavigationLink { NutritionProgressView() } label: { nutritionProgressLabel }
+                .buttonStyle(.plain)
+                .accessibilityHint("Opens nutrition progress")
+        }
+    }
+    private var nutritionProgressLabel: some View {
+        CoachCard {
+            HStack {
+                Label("Weight, measurements & progress", systemImage: "chart.xyaxis.line")
+                Spacer()
+                Image(systemName: "chevron.right").accessibilityHidden(true)
+            }
+        }
     }
     private var startingProfile: NutritionProfile {
         var profile = nutrition.profile
@@ -193,19 +220,27 @@ struct NutritionView: View {
     private var mealsCard: some View {
         CoachCard {
             VStack(alignment: .leading, spacing: 14) {
-                SectionTitle(title: "Meals", subtitle: "Reviewed portions, saved on your device")
+                adaptiveRow {
+                    SectionTitle(title: "Meal Log", subtitle: "Reviewed portions, saved on your device")
+                    if !typeSize.isAccessibilitySize { Spacer() }
+                    Button("All Days") { showMealHistory = true }.frame(minHeight: 44)
+                }
                 if nutrition.meals(on: date).isEmpty { Text("No meals saved for this day.").foregroundStyle(.secondary) }
                 ForEach(nutrition.meals(on: date)) { meal in
                     VStack(alignment: .leading, spacing: 8) {
-                        Button { editMeal = meal } label: {
+                        Button { editMeal = meal; highlightedMealID = nil } label: {
                             HStack {
                                 VStack(alignment: .leading) {
                                     Text(meal.name).font(.headline).foregroundStyle(.primary)
-                                    Text("\(Int(meal.total.calories.rounded())) kcal · \(meal.entries.count) foods").font(.subheadline).foregroundStyle(.secondary)
+                                    Text(meal.date.formatted(date: .omitted, time: .shortened)).font(.caption).foregroundStyle(.secondary)
+                                    Text("\(Int(meal.total.calories.rounded())) kcal · \(Int(meal.total.protein.rounded())) g protein · \(meal.entries.count) foods").font(.subheadline).foregroundStyle(.secondary)
                                 }
                                 Spacer(); Image(systemName: "chevron.right")
                             }
                         }.frame(minHeight: 44)
+                            .padding(.horizontal, highlightedMealID == meal.id ? 8 : 0)
+                            .background(highlightedMealID == meal.id ? Color.coachMint.opacity(0.12) : .clear,
+                                        in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                         adaptiveRow {
                             Button { perform { try nutrition.toggleFavorite(meal) } } label: { Label(meal.favorite ? "Saved" : "Favorite", systemImage: meal.favorite ? "star.fill" : "star") }
                             if !typeSize.isAccessibilitySize { Spacer() }
@@ -259,6 +294,29 @@ struct NutritionView: View {
             }
         }
     }
+    private func mealSavedBanner(_ result: MealSaveResult) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.coachMint).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(result.created ? "Meal saved" : "Meal updated").font(.headline)
+                Text("\(Int(result.total.calories.rounded())) kcal · \(Int(result.total.protein.rounded())) g protein \(result.created ? "added" : "saved") for this day")
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button { savedMeal = nil; highlightedMealID = nil } label: { Image(systemName: "xmark") }
+                .frame(width: 44, height: 44).accessibilityLabel("Dismiss meal saved message")
+        }
+        .padding(14)
+        .background(Color.coachMint.opacity(0.12), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .accessibilityElement(children: .contain)
+    }
+    private func handleMealSaved(_ result: MealSaveResult) {
+        date = result.date
+        savedMeal = result
+        highlightedMealID = result.mealID
+        completionFeedback += 1
+        showLogFood = false
+    }
     private var adaptiveRow: AnyLayout {
         typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10)) : AnyLayout(HStackLayout(spacing: 8))
     }
@@ -284,6 +342,7 @@ private struct LogFoodLauncherView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var nutrition: NutritionModel
     let date: Date
+    let onMealSaved: (MealSaveResult) -> Void
     @State private var destination: LogFoodDestination?
 
     var body: some View {
@@ -339,7 +398,7 @@ private struct LogFoodLauncherView: View {
                 case .nutritionLabel:
                     MealEditorView(date: date, initialAction: .nutritionLabel, onSaved: finishLogging)
                 case .dailyTotals:
-                    NutritionDailyTotalView(date: date, onSaved: finishLogging)
+                    NutritionDailyTotalView(date: date, onSaved: finishDailyTotals)
                 case .copiedMeal(let meal):
                     MealEditorView(copying: meal, date: date, onSaved: finishLogging)
                 }
@@ -363,9 +422,71 @@ private struct LogFoodLauncherView: View {
         .accessibilityHint(detail)
     }
 
-    private func finishLogging() {
+    private func finishLogging(_ result: MealSaveResult) {
+        onMealSaved(result)
         destination = nil
         dismiss()
+    }
+
+    private func finishDailyTotals() {
+        destination = nil
+        dismiss()
+    }
+}
+
+private struct NutritionMealHistoryView: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var nutrition: NutritionModel
+    let onSelectDay: (Date) -> Void
+
+    private var groupedDays: [(key: String, date: Date, meals: [MealRecord])] {
+        Dictionary(grouping: nutrition.meals, by: NutritionStore.mealDayKey)
+            .map { key, meals in
+                (key: key, date: date(for: key) ?? meals[0].date, meals: meals.sorted { $0.date < $1.date })
+            }
+            .sorted { $0.key > $1.key }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if groupedDays.isEmpty {
+                    ContentUnavailableView("No meals yet", systemImage: "fork.knife", description: Text("Saved meals will be grouped here by day."))
+                }
+                ForEach(groupedDays, id: \.key) { day in
+                    Section {
+                        ForEach(day.meals) { meal in
+                            Button { onSelectDay(day.date); dismiss() } label: {
+                                HStack(alignment: .top, spacing: 12) {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(meal.name).font(.headline).foregroundStyle(.primary)
+                                        Text(meal.date.formatted(date: .omitted, time: .shortened)).font(.caption).foregroundStyle(.secondary)
+                                        Text("\(Int(meal.total.calories.rounded())) kcal · \(Int(meal.total.protein.rounded())) g protein")
+                                            .font(.subheadline).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(.tertiary).accessibilityHidden(true)
+                                }.frame(minHeight: 52)
+                            }
+                        }
+                    } header: {
+                        Text(day.date.formatted(date: .complete, time: .omitted))
+                    } footer: {
+                        let total = day.meals.reduce(NutritionAmounts.zero) { $0 + $1.total }
+                        Text("\(Int(total.calories.rounded())) kcal · \(Int(total.protein.rounded())) g protein")
+                    }
+                }
+            }
+            .navigationTitle("Meal History")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
+        }
+    }
+
+    private func date(for dayKey: String) -> Date? {
+        let components = dayKey.split(separator: "-").compactMap { Int($0) }
+        guard components.count == 3 else { return nil }
+        return Calendar.current.date(from: DateComponents(year: components[0], month: components[1], day: components[2], hour: 12))
     }
 }
 
@@ -401,23 +522,40 @@ struct MacroTargetRow: View {
 
 struct NutritionTodayCard: View {
     @EnvironmentObject private var nutrition: NutritionModel
+    let onOpenNutrition: (() -> Void)?
+
+    init(onOpenNutrition: (() -> Void)? = nil) {
+        self.onOpenNutrition = onOpenNutrition
+    }
+
     var body: some View {
-        NavigationLink { NutritionView() } label: {
-            CoachCard {
-                HStack(alignment: .top) {
-                    Image(systemName: "leaf.fill").foregroundStyle(Color.coachMint)
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("Fuel your day").font(.headline).foregroundStyle(.primary)
-                        if let target = nutrition.target(on: .now) {
-                            let current = nutrition.intake(on: .now).calories.map { "\(Int($0))" } ?? "Not logged"
-                            Text("\(current) · target \(target.amounts(training: nutrition.day(on: .now)?.trainingDay ?? false).calories.nutritionCalories) kcal").font(.subheadline).foregroundStyle(.secondary)
-                        } else { Text("Meals, macros, and a personal nutrition plan").font(.subheadline).foregroundStyle(.secondary) }
-                    }
-                    Spacer(); Image(systemName: "chevron.right")
-                }
+        Group {
+            if let onOpenNutrition {
+                Button(action: onOpenNutrition) { content }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Opens the Nutrition tab")
+            } else {
+                NavigationLink { NutritionView() } label: { content }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Opens Nutrition")
             }
         }
-        .buttonStyle(.plain)
-        .accessibilityHint("Opens Nutrition")
+    }
+
+    private var content: some View {
+        CoachCard {
+            HStack(alignment: .top) {
+                Image(systemName: "leaf.fill").foregroundStyle(Color.coachMint)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Fuel your day").font(.headline).foregroundStyle(.primary)
+                    if let target = nutrition.target(on: .now) {
+                        let current = nutrition.intake(on: .now).calories.map { "\(Int($0))" } ?? "Not logged"
+                        Text("\(current) · target \(target.amounts(training: nutrition.day(on: .now)?.trainingDay ?? false).calories.nutritionCalories) kcal").font(.subheadline).foregroundStyle(.secondary)
+                    } else { Text("Meals, macros, and a personal nutrition plan").font(.subheadline).foregroundStyle(.secondary) }
+                }
+                Spacer()
+                Image(systemName: "chevron.right").accessibilityHidden(true)
+            }
+        }
     }
 }

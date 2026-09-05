@@ -35,8 +35,19 @@ struct WorkoutExercise: Identifiable, Codable, Hashable, Sendable {
     var targetRPE: Double
     var restSeconds: Int
     var supersetGroup: String?
+    /// Nil identifies the legacy strength/resistance prescription.
+    var modalityRaw: String? = nil
+    /// Used by cardio, balance, and mobility sessions. Strength sessions keep
+    /// their existing set/rep prescription.
+    var durationSeconds: Int? = nil
+    var intensityCue: String? = nil
+    var coachingCue: String? = nil
 
     var resolvedLoadUnit: LoadUnit { loadUnit ?? .pounds }
+
+    var modality: TrainingModality {
+        modalityRaw.flatMap(TrainingModality.init(rawValue:)) ?? .strengthResistance
+    }
 
     var progressionUpperReps: Int {
         max(targetReps, targetRepRangeUpper ?? targetReps)
@@ -467,6 +478,10 @@ final class WorkoutTemplateRecord {
         get { (try? JSONDecoder().decode([WorkoutExercise].self, from: exercisesData)) ?? [] }
         set { exercisesData = (try? JSONEncoder().encode(newValue)) ?? Data() }
     }
+
+    var modality: TrainingModality {
+        exercises.first?.modality ?? .strengthResistance
+    }
 }
 
 @Model
@@ -492,6 +507,7 @@ final class WorkoutSessionRecord {
     /// duplicate, a workout when a newer export attempt is saved.
     var healthExportSyncVersion: Int = 1
     var healthExportErrorMessage: String?
+    var modalityRaw: String?
 
     init(
         id: UUID = UUID(),
@@ -506,7 +522,8 @@ final class WorkoutSessionRecord {
         notes: String = "",
         healthExportState: WorkoutHealthExportState = .pending,
         healthExportSyncVersion: Int = 1,
-        healthExportErrorMessage: String? = nil
+        healthExportErrorMessage: String? = nil,
+        modality: TrainingModality = .strengthResistance
     ) {
         self.id = id
         self.templateID = templateID
@@ -522,10 +539,15 @@ final class WorkoutSessionRecord {
         self.healthExportStateRaw = healthExportState.rawValue
         self.healthExportSyncVersion = max(healthExportSyncVersion, 1)
         self.healthExportErrorMessage = healthExportErrorMessage
+        self.modalityRaw = modality.rawValue
     }
 
     var readiness: ReadinessBand {
         ReadinessBand(rawValue: readinessRaw) ?? .moderate
+    }
+
+    var modality: TrainingModality {
+        modalityRaw.flatMap(TrainingModality.init(rawValue:)) ?? .strengthResistance
     }
 
     /// Preserves a genuine score of zero for new records while treating the

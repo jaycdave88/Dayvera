@@ -10,12 +10,15 @@ struct NightPlanView: View {
     @State private var showingPlanDetails = false
     @State private var showingTimingAssumptions = false
     @State private var showingEnergyGuide = false
+    @State private var showingPlanEditor = false
+    @State private var editedPlan: PlanDraft?
 
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 18) {
                 planHeader
                 scheduleTimelineCard
+                if editedPlan != nil { editedPlanReviewCard }
                 if let failure = appModel.calendarReadFailure {
                     calendarFallbackCard(failure)
                 }
@@ -64,6 +67,20 @@ struct NightPlanView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Dayvera will remove only the wake alarm and Calendar events created by this applied plan.")
+        }
+        .sheet(isPresented: $showingPlanEditor) {
+            PlanEditorView(
+                calculated: calculatedDraft,
+                initial: currentDraft,
+                context: planEditContext
+            ) { editedPlan = $0 == calculatedDraft ? nil : $0 }
+        }
+        .onAppear {
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--show-plan-editor") {
+                showingPlanEditor = true
+            }
+            #endif
         }
     }
 
@@ -117,6 +134,18 @@ struct NightPlanView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    private var calculatedDraft: PlanDraft { PlanDraft(plan: appModel.plan) }
+
+    private var currentDraft: PlanDraft { editedPlan ?? calculatedDraft }
+
+    private var planEditContext: PlanDraftValidationContext {
+        PlanDraftValidationContext(readyBy: readyTime)
+    }
+
+    private var currentApplicationRequest: PlanApplicationRequest {
+        currentDraft.applicationRequest(basedOn: appModel.planApplicationRequest())
+    }
+
     private var commitmentContext: String {
         if let commitment = appModel.plan.firstCommitment {
             return "Built around \(commitment.title) at \(commitment.startDate.shortTime)."
@@ -129,15 +158,15 @@ struct NightPlanView: View {
             VStack(alignment: .leading, spacing: 16) {
                 Label("Tomorrow’s schedule", systemImage: "calendar.badge.clock")
                     .font(.headline)
-                PlanRow(symbol: "moon.stars.fill", title: "Bed", time: appModel.plan.bedtime, tint: .indigo)
+                PlanRow(symbol: "moon.stars.fill", title: "Bed", time: currentDraft.bedtime, tint: .indigo)
                 connector
-                PlanRow(symbol: "alarm.fill", title: "Wake", time: appModel.plan.wakeTime, tint: .coachAmber)
+                PlanRow(symbol: "alarm.fill", title: "Wake", time: currentDraft.wakeTime, tint: .coachAmber)
                 connector
                 PlanRow(
                     symbol: "dumbbell.fill",
                     title: "Train",
-                    time: appModel.plan.gymStart,
-                    endTime: appModel.plan.gymEnd,
+                    time: currentDraft.gymStart,
+                    endTime: currentDraft.gymEnd,
                     tint: appModel.snapshot.readinessAvailable ? appModel.plan.readiness.color : .coachIndigo
                 )
                 connector
@@ -176,6 +205,12 @@ struct NightPlanView: View {
             if !dynamicTypeSize.isAccessibilitySize {
                 applyPlanButton
             }
+
+            Button("Edit Plan", systemImage: "slider.horizontal.3") {
+                showingPlanEditor = true
+            }
+            .buttonStyle(.bordered)
+            .frame(minHeight: 44)
 
             if appModel.calendarStatus == "Denied" {
                 Button("Open Settings for Calendar", systemImage: "gear") {
@@ -305,7 +340,7 @@ struct NightPlanView: View {
                 .accessibilityLabel("Plan applied")
         } else {
             Button {
-                pendingApplication = appModel.planApplicationRequest()
+                pendingApplication = currentApplicationRequest
             } label: {
                 if appModel.isApplying {
                     HStack {
@@ -328,7 +363,7 @@ struct NightPlanView: View {
             .tint(Color.coachIndigo)
             .disabled(
                 appModel.isApplying
-                    || appModel.plan.wakeTime <= .now
+                    || currentDraft.wakeTime <= .now
                     || appModel.calendarReapplyBlockingReason != nil
                     || (appModel.appliedPlanStatus != nil && appModel.appliedPlanVerificationMessage != nil)
             )
@@ -342,7 +377,7 @@ struct NightPlanView: View {
         if appModel.calendarReapplyBlockingReason != nil {
             return "Undo applied plan first"
         }
-        let request = appModel.planApplicationRequest()
+        let request = currentApplicationRequest
         let destinations = request.calendarDestinations
         let count = destinations?.requestedCount ?? 0
         if appModel.calendarStatus != "Connected" || count == 0 { return "Apply wake alarm" }
@@ -356,9 +391,9 @@ struct NightPlanView: View {
         guard let status = appModel.appliedPlanStatus,
               appModel.appliedPlanVerificationMessage == nil,
               status.wakeAlarmApplied,
-              status.wakeTime == appModel.plan.wakeTime,
-              status.gymStart == appModel.plan.gymStart,
-              status.gymEnd == appModel.plan.gymEnd else {
+              status.wakeTime == currentDraft.wakeTime,
+              status.gymStart == currentDraft.gymStart,
+              status.gymEnd == currentDraft.gymEnd else {
             return false
         }
         let expectsCalendarEvent = status.expectsCalendarEvent
@@ -369,9 +404,9 @@ struct NightPlanView: View {
 
     private var accessibilityScheduleSummary: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Bed · \(appModel.plan.bedtime.shortTime)")
-            Text("Wake · \(appModel.plan.wakeTime.shortTime)")
-            Text("Train · \(appModel.plan.gymStart.shortTime)–\(appModel.plan.gymEnd.shortTime)")
+            Text("Bed · \(currentDraft.bedtime.shortTime)")
+            Text("Wake · \(currentDraft.wakeTime.shortTime)")
+            Text("Train · \(currentDraft.gymStart.shortTime)–\(currentDraft.gymEnd.shortTime)")
             Text(accessibilityCommitmentSummary)
         }
         .font(.headline)
@@ -382,6 +417,34 @@ struct NightPlanView: View {
             return "Ready · \(fallbackCommitmentTime) fallback"
         }
         return "Ready · \(commitment.startDate.shortTime) for \(commitment.title)"
+    }
+
+    private var editedPlanReviewCard: some View {
+        CoachCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Edited plan · not applied", systemImage: "pencil.circle.fill")
+                    .font(.headline)
+                    .foregroundStyle(Color.coachIndigo)
+                Text("Review these times, then use Apply Plan. Editing does not create an alarm or Calendar event.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                PlanTimeComparison(title: "Bed", before: calculatedDraft.bedtime, after: currentDraft.bedtime)
+                PlanTimeComparison(title: "Wake", before: calculatedDraft.wakeTime, after: currentDraft.wakeTime)
+                PlanTimeComparison(
+                    title: "Train",
+                    before: calculatedDraft.gymStart,
+                    after: currentDraft.gymStart,
+                    beforeEnd: calculatedDraft.gymEnd,
+                    afterEnd: currentDraft.gymEnd
+                )
+                HStack {
+                    Button("Adjust") { showingPlanEditor = true }
+                    Spacer()
+                    Button("Use calculated plan") { editedPlan = nil }
+                }
+                .buttonStyle(.bordered)
+            }
+        }
     }
 
     private func appliedPlanCard(_ status: AppliedPlanStatus) -> some View {
@@ -735,6 +798,240 @@ struct NightPlanView: View {
         case .dip: .coachRose
         case .windDown: .coachIndigo
         }
+    }
+}
+
+private struct PlanEditorView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    let calculated: PlanDraft
+    let context: PlanDraftValidationContext
+    let onSave: (PlanDraft) -> Void
+    private let assistant: any PlanDraftSuggesting
+
+    @State private var draft: PlanDraft
+    @State private var request = ""
+    @State private var proposal: PlanDraftProposal?
+    @State private var assistantMessage: String?
+    @State private var isSuggesting = false
+    @State private var useOnDeviceAssistance = false
+
+    init(
+        calculated: PlanDraft,
+        initial: PlanDraft,
+        context: PlanDraftValidationContext,
+        assistant: any PlanDraftSuggesting = FoundationModelPlanAssistant(),
+        onSave: @escaping (PlanDraft) -> Void
+    ) {
+        self.calculated = calculated
+        self.context = context
+        self.assistant = assistant
+        self.onSave = onSave
+        _draft = State(initialValue: initial)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    DatePicker("Bed", selection: $draft.bedtime, displayedComponents: [.date, .hourAndMinute])
+                    DatePicker("Wake", selection: $draft.wakeTime, displayedComponents: [.date, .hourAndMinute])
+                    DatePicker("Train", selection: $draft.gymStart, displayedComponents: [.date, .hourAndMinute])
+                    DatePicker("Finish", selection: $draft.gymEnd, displayedComponents: [.date, .hourAndMinute])
+                } header: {
+                    Text("Draft times")
+                } footer: {
+                    Text("Keep at least 7 hours for sleep, 20–180 minutes for training, and finish by \(context.readyBy.shortTime).")
+                }
+
+                if !validationIssues.isEmpty {
+                    Section("Needs attention") {
+                        ForEach(validationIssues, id: \.self) { issue in
+                            Label(issue.message, systemImage: "exclamationmark.triangle.fill")
+                                .foregroundStyle(Color.coachAmber)
+                        }
+                    }
+                }
+
+                Section {
+                    PlanTimeComparison(title: "Bed", before: calculated.bedtime, after: draft.bedtime)
+                    PlanTimeComparison(title: "Wake", before: calculated.wakeTime, after: draft.wakeTime)
+                    PlanTimeComparison(
+                        title: "Train",
+                        before: calculated.gymStart,
+                        after: draft.gymStart,
+                        beforeEnd: calculated.gymEnd,
+                        afterEnd: draft.gymEnd
+                    )
+                } header: {
+                    Text("Calculated → draft")
+                } footer: {
+                    Text("Nothing is scheduled from this editor. Apply Plan still shows the exact alarm and Calendar changes for confirmation.")
+                }
+
+                Section("Optional on-device suggestion") {
+                    Toggle("Use on-device assistance for this request", isOn: $useOnDeviceAssistance)
+                    if useOnDeviceAssistance {
+                        TextField(
+                            "For example: start 30 minutes later",
+                            text: $request,
+                            axis: .vertical
+                        )
+                        .lineLimit(2...4)
+                        Button {
+                            Task { await requestSuggestion() }
+                        } label: {
+                            if isSuggesting {
+                                HStack {
+                                    SwiftUI.ProgressView()
+                                    Text("Creating suggestion…")
+                                }
+                            } else {
+                                Label("Suggest bounded changes", systemImage: "wand.and.stars")
+                            }
+                        }
+                        .disabled(isSuggesting || request.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    } else {
+                        Text("Manual editing is fully available. Turn this on only when you want help translating a timing preference into a bounded draft.")
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if let assistantMessage {
+                        Text(assistantMessage)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if let proposal {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Label("Suggestion · not applied", systemImage: "sparkles")
+                                .font(.headline)
+                            Text(proposal.rationale)
+                                .font(.subheadline)
+                            PlanTimeComparison(title: "Bed", before: proposal.current.bedtime, after: proposal.proposed.bedtime)
+                            PlanTimeComparison(title: "Wake", before: proposal.current.wakeTime, after: proposal.proposed.wakeTime)
+                            PlanTimeComparison(
+                                title: "Train",
+                                before: proposal.current.gymStart,
+                                after: proposal.proposed.gymStart,
+                                beforeEnd: proposal.current.gymEnd,
+                                afterEnd: proposal.proposed.gymEnd
+                            )
+                            Button("Use this suggestion") {
+                                draft = proposal.proposed
+                                self.proposal = nil
+                                assistantMessage = "Suggestion copied into your draft. Review and save it below."
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                    }
+                }
+
+                Section {
+                    Button("Use calculated plan") {
+                        draft = calculated
+                        proposal = nil
+                        assistantMessage = nil
+                    }
+                }
+            }
+            .navigationTitle("Edit Plan")
+            .navigationBarTitleDisplayMode(dynamicTypeSize.isAccessibilitySize ? .inline : .large)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save Draft") {
+                        onSave(draft)
+                        dismiss()
+                    }
+                    .disabled(!validationIssues.isEmpty)
+                }
+            }
+            .onChange(of: draft) { _, _ in invalidateStaleProposal() }
+            .onChange(of: request) { _, _ in invalidateStaleProposal() }
+            .onChange(of: useOnDeviceAssistance) { _, enabled in
+                if !enabled { invalidateStaleProposal() }
+            }
+        }
+    }
+
+    private var validationIssues: [PlanDraftValidationIssue] {
+        PlanDraftValidator.issues(for: draft, context: context)
+    }
+
+    private func invalidateStaleProposal() {
+        guard proposal != nil else { return }
+        proposal = nil
+        assistantMessage = "The prior suggestion was cleared because the draft or request changed."
+    }
+
+    @MainActor
+    private func requestSuggestion() async {
+        let sourceDraft = draft
+        let sourceRequest = request
+        isSuggesting = true
+        proposal = nil
+        assistantMessage = nil
+        defer { isSuggesting = false }
+        do {
+            let result = try await assistant.propose(
+                request: sourceRequest,
+                current: sourceDraft,
+                context: context
+            )
+            guard useOnDeviceAssistance, draft == sourceDraft, request == sourceRequest else {
+                assistantMessage = "The suggestion was cleared because the draft or request changed."
+                return
+            }
+            proposal = result
+        } catch is CancellationError {
+            assistantMessage = nil
+        } catch {
+            assistantMessage = error.localizedDescription
+        }
+    }
+}
+
+private struct PlanTimeComparison: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    let title: String
+    let before: Date
+    let after: Date
+    var beforeEnd: Date? = nil
+    var afterEnd: Date? = nil
+
+    var body: some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 3) { content }
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 10) { content }
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+        .accessibilityValue("Calculated \(formatted(before, end: beforeEnd)); draft \(formatted(after, end: afterEnd))")
+    }
+
+    @ViewBuilder private var content: some View {
+        Text(title).font(.subheadline.weight(.semibold))
+        if !dynamicTypeSize.isAccessibilitySize { Spacer() }
+        Text(formatted(before, end: beforeEnd))
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .strikethrough(before != after || beforeEnd != afterEnd)
+        Image(systemName: "arrow.right")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .accessibilityHidden(true)
+        Text(formatted(after, end: afterEnd))
+            .font(.subheadline.weight(.semibold))
+    }
+
+    private func formatted(_ start: Date, end: Date?) -> String {
+        end.map { "\(start.shortTime)–\($0.shortTime)" } ?? start.shortTime
     }
 }
 
