@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSAlarmKitUsageDescription</key>
+	<string>Dayvera schedules the wake alarm you approve for your next-day plan.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Dayvera photographs meals for private, on-device food recognition and a food journal you review before saving.</string>
+</dict>
+</plist>

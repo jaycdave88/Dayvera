@@ -1,13 +1,13 @@
-# Sleep Coach developer guide
+# Dayvera developer guide
 
 The root [README](README.md) is the short product tour. This guide keeps the
 repeatable build, test, and simulator routes used for engineering and QA.
 
 ## Requirements
 
-- Xcode 26 or newer
-- iOS 26 platform support
-- An iOS 26 simulator, or an iOS 26 iPhone with an Apple development team
+- Xcode 27 or newer
+- iOS 27 platform support
+- An iOS 27 simulator, or an iOS 27 iPhone with an Apple development team
 
 Simulator identifiers are machine-specific and intentionally not stored in the
 repository. Find yours with:
@@ -18,20 +18,20 @@ xcrun simctl list devices available
 
 ## Run in Xcode
 
-1. Open `SleepCoach.xcodeproj`.
-2. Choose an iOS 26 simulator and run the `SleepCoach` scheme.
-3. For a physical iPhone, select the `SleepCoach` target and choose your team
+1. Open `Dayvera.xcodeproj`.
+2. Choose an iOS 27 simulator and run the `Dayvera` scheme.
+3. For a physical iPhone, select the `Dayvera` target and choose your team
    under Signing & Capabilities before running.
 
 ## Run the tests
 
 ```sh
 xcodebuild test \
-  -project SleepCoach.xcodeproj \
-  -scheme SleepCoach \
+  -project Dayvera.xcodeproj \
+  -scheme Dayvera \
   -sdk iphonesimulator \
   -destination 'platform=iOS Simulator,id=<SIMULATOR-UDID>' \
-  -derivedDataPath /private/tmp/SleepCoachSignedTests \
+  -derivedDataPath /private/tmp/DayveraSignedTests \
   SDKROOT=iphonesimulator
 ```
 
@@ -49,7 +49,7 @@ xcrun simctl launch --terminate-running-process \
   --demo-data --skip-onboarding --tab=today
 ```
 
-Choose a primary tab with `--tab=today`, `plan`, `train`, or `progress`.
+Choose a primary tab with `--tab=today`, `plan`, `train`, `nutrition`, or `progress`.
 The legacy `exercises` and `settings` values remain shortcuts to those nested
 destinations for deterministic QA.
 
@@ -87,24 +87,30 @@ Build a compact-width fixture with:
 
 ```sh
 xcodebuild \
-  -project SleepCoach.xcodeproj \
-  -scheme SleepCoach \
+  -project Dayvera.xcodeproj \
+  -scheme Dayvera \
   -sdk iphonesimulator \
   -destination 'platform=iOS Simulator,id=<COMPACT-SIMULATOR-UDID>' \
-  -derivedDataPath /private/tmp/SleepCoachCompactSimulatorDerived \
+  -derivedDataPath /private/tmp/DayveraCompactSimulatorDerived \
   CODE_SIGNING_ALLOWED=NO SDKROOT=iphonesimulator build
 ```
 
 ## Compile without Simulator services
 
 ```sh
-xcodebuild -project SleepCoach.xcodeproj -target SleepCoach \
+xcodebuild -project Dayvera.xcodeproj -target Dayvera \
   -sdk iphoneos -configuration Debug CODE_SIGNING_ALLOWED=NO build
 
-xcodebuild -project SleepCoach.xcodeproj -target SleepCoachTests \
+xcodebuild -project Dayvera.xcodeproj -target DayveraTests \
   -sdk iphoneos -configuration Debug CODE_SIGNING_ALLOWED=NO build
 ```
 
 See the [QA gallery](QA/README.md) for the current visual fixtures and
 [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for the complete validation
 record.
+
+## Dayvera nutrition QA
+
+Use `--demo-data --skip-onboarding --tab=nutrition` for synthetic meals, weight history and targets. Add `--show-nutrition-scan`, `--show-nutrition-whatif`, `--show-nutrition-progress`, or `--show-nutrition-profile` for focused routes.
+
+Xcode 27 is required. When it is not the selected default, prefix commands with `DEVELOPER_DIR=/path/to/Xcode-beta.app/Contents/Developer`; do not change global Xcode selection for this project. Real-device photo inference requires an available Apple Intelligence vision model and cannot be certified by simulator fixtures.

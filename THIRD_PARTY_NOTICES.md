@@ -2,13 +2,13 @@
 
 ## RepDB Exercise Dataset (free tier)
 
-Sleep Coach displays exercise metadata and flat illustrations fetched from the official RepDB free-tier distribution at [exercise-dataset.com](https://exercise-dataset.com/). The app filters that catalog to strength exercises and caches downloaded content locally.
+Dayvera displays exercise metadata and flat illustrations fetched from the official RepDB free-tier distribution at [exercise-dataset.com](https://exercise-dataset.com/). The app filters that catalog to strength exercises and caches downloaded content locally.
 
 [Exercise data by RepDB (repdb.co)](https://repdb.co).
 
-Use is governed by the [RepDB Dataset License](https://github.com/RepDB/exercise-dataset/blob/main/LICENSE-DATA.md), which permits personal and commercial in-app use with visible attribution and prohibits redistribution as a standalone dataset or API. Sleep Coach does not use RepDB media as generative-AI input.
+Use is governed by the [RepDB Dataset License](https://github.com/RepDB/exercise-dataset/blob/main/LICENSE-DATA.md), which permits personal and commercial in-app use with visible attribution and prohibits redistribution as a standalone dataset or API. Dayvera does not use RepDB media as generative-AI input.
 
-The free tier supplies static start/peak or single-position illustrations. Sleep Coach does not ship the evaluation-only premium animations; any in-app auto preview only alternates the licensed static key positions and is labeled accordingly.
+The free tier supplies static start/peak or single-position illustrations. Dayvera does not ship the evaluation-only premium animations; any in-app auto preview only alternates the licensed static key positions and is labeled accordingly.
 
 ## Referenced projects
 
@@ -20,3 +20,9 @@ The architecture and feature research also considered these open-source projects
 - Whoordan / `W4rd2/whoordan` — Apache License 2.0.
 
 Strong, Eight Sleep, Hume, and RISE are trademarks of their respective owners. This project is independent and is not affiliated with or endorsed by them.
+
+## USDA FoodData Central
+
+The bundled food catalog is derived from the public-domain USDA FoodData Central SR Legacy April 2018 JSON dataset. Attribution: U.S. Department of Agriculture, Agricultural Research Service. FoodData Central, 2019. https://fdc.nal.usda.gov/
+
+The normalized catalog includes the source data SHA-256 and dataset version. The importer preserves unknown nutrients by excluding incomplete records; it does not substitute zero. See `Scripts/import_food_catalog.py`.

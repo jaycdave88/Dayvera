@@ -1,10 +1,29 @@
-# Sleep Coach implementation status
+# Dayvera implementation status
 
-Last updated: 2026-09-04
+Last updated: 2026-09-05
 
-## Current state
+## Dayvera nutrition release
 
-The iOS 26 simulator scope is implemented and integrated. The project is a native, iPhone-only SwiftUI app with an iOS 26.0 deployment target.
+The current project is a native iPhone SwiftUI app targeting **iOS 27**. Its five tabs are **Today, Plan, Train, Nutrition, Progress**. The project, module, shared scheme, app name, icon, documentation, and GitHub remote use Dayvera. Installed-app identifiers and persisted ownership keys remain compatible with existing installations; see [REBRAND.md](REBRAND.md).
+
+- Nutrition includes adult profile setup, four goals, calorie and macro ranges, uncertainty explanations, muscle priorities, current intake, recovery context, 7/28-day weight/intake/protein-adherence charts, measurements, reviewed adjustments, and what-if scenarios.
+- Meals support camera/Photos import, on-device structured food candidates, explicit database matching and portion review, manual label values, favorites, repeat/edit/delete, and local photos. The bundled USDA SR Legacy catalog contains 7,793 complete nutrient records; model output never supplies authoritative nutrients.
+- Dietary Health access is optional and independent of existing recovery reads. Exactly one intake source counts each day; missing macros remain unknown, failed imports clear stale totals, and completeness must be confirmed.
+- SwiftData adds five record types. Existing workout entity schemas remain unchanged. A database produced by the original module verifies migration, workout identity and Health-export continuity.
+- The final integrated iOS 27 simulator suite passed **209 tests with zero failures**, including original-store migration, macro conservation, source separation, missing-data handling, and illness-related target safeguards.
+- The final unsigned Release build succeeded against the iOS 27 physical-device SDK. The Debug simulator app installs and launches successfully; dark and Accessibility Extra Large light layouts were inspected.
+- Xcode 27 beta 6 and the iOS 27 simulator SDK compile the Apple Foundation Models image attachment and guided-generation APIs used here. Runtime model availability remains device-dependent.
+- Current nutrition captures are in [QA/README.md](QA/README.md). All captured data are synthetic.
+
+### Device acceptance remaining for this release
+
+A connected iOS 27 phone was discovered, but its device identifier did not match any existing locally provisioned build. The machine has multiple development signing teams, so this release has not been installed onto that phone. Select the appropriate team in Xcode for a device build. Camera permission, real meal recognition/portion review, Apple Intelligence availability/download, dietary Health permissions/imports, and upgrading an existing installation still need hands-on acceptance. Simulator tests do not certify those system interactions or food-recognition accuracy.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the integration and file map, and [NUTRITION.md](NUTRITION.md) for formulas, evidence requirements and safety constraints.
+
+## Historical recovery and training baseline
+
+The following sections record the pre-nutrition iOS 26 release. Their test counts, device installs and screenshots are historical evidence, not validation of the iOS 27 nutrition release.
 
 - Primary navigation is exactly **Today, Plan, Train, Progress**. Settings is in Today’s toolbar; the exercise library is in Train.
 - Recovery and training trends live under Progress with 7D/28D controls.
@@ -41,7 +60,7 @@ The iOS 26 simulator scope is implemented and integrated. The project is a nativ
 
 ## Exercise catalog implementation and guardrails
 
-- `SleepCoach/Domain/ExerciseCatalogModels.swift`, `SleepCoach/Services/ExerciseCatalogStore.swift`, `SleepCoach/Views/ExerciseLibraryView.swift`, and `SleepCoachTests/ExerciseCatalogTests.swift` are integrated into the Xcode project.
+- `Dayvera/Domain/ExerciseCatalogModels.swift`, `Dayvera/Services/ExerciseCatalogStore.swift`, `Dayvera/Views/ExerciseLibraryView.swift`, and `DayveraTests/ExerciseCatalogTests.swift` are integrated into the Xcode project.
 - The official RepDB free-tier JSON at `https://exercise-dataset.com/exercises.json` is decoded with schema/version, count, identifier, strength-category, and HTTPS media-host validation. The QA snapshot contained 491 strength exercises.
 - Search covers names and descriptive metadata. Browse mode has A–Z sections plus equipment, muscle, and level filters; selection mode supports adding multiple entries to a template while preventing duplicate catalog IDs.
 - Catalog exercises retain `catalogID` through templates, active drafts, completed sets, and exercise-specific progress while keeping an editable local prescription snapshot.
@@ -52,7 +71,7 @@ The iOS 26 simulator scope is implemented and integrated. The project is a nativ
 - The free tier supplies still illustrations. Start and Finish are labeled as positions. Two-position preview only alternates those two stills, explicitly says it is not full-motion video, and is unavailable with Reduce Motion. Do not add RepDB premium preview animations without a separate license.
 - `yuhonas/free-exercise-db` media remain excluded pending provenance clarification. wger content remains excluded without per-entry license/attribution filtering. LongHaul Fitness remains a metadata-only fallback.
 
-## QA evidence completed
+## Historical baseline QA evidence
 
 - An iOS 26 Simulator build succeeded after catalog, navigation, metrics, and workout integration.
 - The final release-candidate suite ran **195 tests with zero failures or skips**. The result bundle identifies an iPhone 17 Pro simulator on iOS 26.0.1, confirming that the final run did not target the connected phone. A preceding integrated build also passed 185 tests on the development iPhone before the last launch-hardening and Calendar edge-case tests were added.
@@ -66,24 +85,24 @@ The iOS 26 simulator scope is implemented and integrated. The project is a nativ
 - The post-fix capture set is stored in `QA/Screenshots`; `QA/README.md` provides the current gallery index.
 - The workspace root was refreshed with `zg index . --mode auto`; fresh zvec-grep audits covered health/planning, catalog/workout identity, navigation, accessibility, and licensing.
 
-## Physical-device deployment state
+## Historical baseline physical-device deployment
 
 - A development iPhone running iOS 26 was previously verified over USB with pairing, Developer Mode, and developer disk-image services available. Machine-specific device details are intentionally omitted from this public repository.
 - Xcode's iOS 26.5 platform support (23F77, 8.52 GB) was downloaded and installed, resolving the prior device-platform mismatch.
 - The app and test targets use automatic signing. The public project intentionally leaves `DEVELOPMENT_TEAM` blank; choose a local team in Xcode before the next phone deployment. The bundle identifiers are `com.momoai.personalassistant.sleepcoach` and `.tests`, and HealthKit capability metadata is declared alongside the entitlements.
 - Automatic provisioning registered the development phone and generated a profile containing the HealthKit and HealthKit background-delivery entitlements. Provisioning profiles and certificates are excluded from version control.
-- Signed physical-device builds use the local development identity without writing its team or device identifiers into the public project. The final release candidate was signed, installed, launched exactly once, and remained alive after the startup observation window. No new SleepCoach crash diagnostic was produced; the earlier repeated open/close behavior was XCTest repeatedly launching and terminating its host, not an application crash loop.
+- Signed physical-device builds use the local development identity without writing its team or device identifiers into the public project. The final release candidate was signed, installed, launched exactly once, and remained alive after the startup observation window. No new Dayvera crash diagnostic was produced; the earlier repeated open/close behavior was XCTest repeatedly launching and terminating its host, not an application crash loop.
 - Clean simulator and unsigned Release device-SDK builds also succeeded after the project-signing changes.
 
-## Current simulator fixtures
+## Simulator fixtures
 
-QA uses iPhone 17 Pro and compact-width iPhone simulators on iOS 26. Their machine-specific UUIDs are intentionally omitted; use `xcrun simctl list devices available` and the portable commands in `DEVELOPMENT.md`.
+Current nutrition QA uses an iPhone 17 Pro simulator on iOS 27. The historical baseline used iOS 26 and compact-width fixtures. Their machine-specific UUIDs are intentionally omitted; use `xcrun simctl list devices available` and the portable commands in `DEVELOPMENT.md`.
 
-Debug builds support deterministic `--demo-data`, `--demo-health-partial`, `--demo-applied-plan`, `--tab=<today|plan|train|progress>`, `--show-data-sources`, `--show-calendar-setup`, `--show-signal-source=<metric>`, `--show-exercise=<repdb-id>`, `--show-template-editor`, `--show-template-library`, `--show-active-workout`, `--show-workout-adjustment`, `--show-workout-options`, `--show-workout-detail`, `--show-generated-workout`, `--show-progress`, and `--show-recovery-progress` routes. Legacy `--tab=exercises` and `--tab=settings` remain QA shortcuts to the nested destinations. See `DEVELOPMENT.md` for commands and prerequisites.
+Debug builds support deterministic `--demo-data`, `--demo-health-partial`, `--demo-applied-plan`, `--tab=<today|plan|train|nutrition|progress>`, `--show-data-sources`, `--show-calendar-setup`, `--show-signal-source=<metric>`, `--show-exercise=<repdb-id>`, `--show-template-editor`, `--show-template-library`, `--show-active-workout`, `--show-workout-adjustment`, `--show-workout-options`, `--show-workout-detail`, `--show-generated-workout`, `--show-progress`, and `--show-recovery-progress` routes. Legacy `--tab=exercises` and `--tab=settings` remain QA shortcuts to the nested destinations. See `DEVELOPMENT.md` for commands and prerequisites.
 
 All `--show-…` routes self-select their required tab. A paired `--tab` argument is optional.
 
-## Final audit fixes completed
+## Historical baseline audit fixes
 
 - Sleep status/copy thresholds are consistent and regression-tested.
 - Prior-day overlapping Calendar events are filtered out of the requested day’s commitment candidates.
@@ -108,15 +127,15 @@ The green simulator suite is run with:
 
 ```sh
 xcodebuild test \
-  -project SleepCoach.xcodeproj \
-  -scheme SleepCoach \
+  -project Dayvera.xcodeproj \
+  -scheme Dayvera \
   -sdk iphonesimulator \
   -destination 'platform=iOS Simulator,id=<SIMULATOR-UDID>' \
-  -derivedDataPath /private/tmp/SleepCoachSignedTests \
+  -derivedDataPath /private/tmp/DayveraSignedTests \
   SDKROOT=iphonesimulator
 ```
 
-## Remaining acceptance work
+## Recovery and training acceptance still remaining
 
 On the development iPhone, complete hands-on runtime acceptance for real Eight Sleep/Hume/Apple Watch samples and exact source attribution; first-run, limited-history, revoked, and restored HealthKit access; stale and mixed-source fallback; saving a finished workout to Health; Calendar authorization/event creation across timezone and DST changes; and an approved AlarmKit wake alarm firing.
 

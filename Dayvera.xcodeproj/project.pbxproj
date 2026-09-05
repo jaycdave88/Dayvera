@@ -1,0 +1,678 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 60;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		B00000000000000000000001 /* DayveraApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000001 /* DayveraApp.swift */; };
+		B00000000000000000000002 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000002 /* AppModel.swift */; };
+		B00000000000000000000003 /* HealthModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000003 /* HealthModels.swift */; };
+		B00000000000000000000004 /* WorkoutModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000004 /* WorkoutModels.swift */; };
+		B00000000000000000000005 /* WellnessEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000005 /* WellnessEngine.swift */; };
+		B00000000000000000000006 /* HealthKitService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000006 /* HealthKitService.swift */; };
+		B00000000000000000000007 /* CalendarService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000007 /* CalendarService.swift */; };
+		B00000000000000000000008 /* AlarmService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000008 /* AlarmService.swift */; };
+		B00000000000000000000009 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000009 /* DesignSystem.swift */; };
+		B00000000000000000000010 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000010 /* RootView.swift */; };
+		B00000000000000000000011 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000011 /* DashboardView.swift */; };
+		B00000000000000000000012 /* NightPlanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000012 /* NightPlanView.swift */; };
+		B00000000000000000000013 /* WorkoutsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000013 /* WorkoutsView.swift */; };
+		B00000000000000000000014 /* ProgressView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000014 /* ProgressView.swift */; };
+		B00000000000000000000015 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000015 /* SettingsView.swift */; };
+		B00000000000000000000016 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000016 /* Assets.xcassets */; };
+		B00000000000000000000017 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000017 /* PrivacyInfo.xcprivacy */; };
+		B00000000000000000000018 /* WellnessEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000019 /* WellnessEngineTests.swift */; };
+		B00000000000000000000019 /* WorkoutModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000020 /* WorkoutModelsTests.swift */; };
+		B00000000000000000000020 /* DemoServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000024 /* DemoServices.swift */; };
+		B00000000000000000000021 /* AppModelLifecycleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000025 /* AppModelLifecycleTests.swift */; };
+		B00000000000000000000022 /* ExerciseCatalogModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000026 /* ExerciseCatalogModels.swift */; };
+		B00000000000000000000023 /* ExerciseCatalogStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000027 /* ExerciseCatalogStore.swift */; };
+		B00000000000000000000024 /* ExerciseCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000028 /* ExerciseCatalogTests.swift */; };
+		B00000000000000000000025 /* ExerciseLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000029 /* ExerciseLibraryView.swift */; };
+		B00000000000000000000026 /* DataSourcesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000030 /* DataSourcesView.swift */; };
+		B00000000000000000000027 /* HealthKitServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000031 /* HealthKitServiceTests.swift */; };
+		B00000000000000000000028 /* WorkoutPlanningModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000032 /* WorkoutPlanningModels.swift */; };
+		B00000000000000000000029 /* TrainingProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000033 /* TrainingProfile.swift */; };
+		B00000000000000000000030 /* CuratedExerciseCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000034 /* CuratedExerciseCatalog.swift */; };
+		B00000000000000000000031 /* DailyTrainingStateBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000035 /* DailyTrainingStateBuilder.swift */; };
+		B00000000000000000000032 /* FoundationModelWorkoutPersonalizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000036 /* FoundationModelWorkoutPersonalizer.swift */; };
+		B00000000000000000000033 /* WorkoutPersonalizationRequestBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000037 /* WorkoutPersonalizationRequestBuilder.swift */; };
+		B00000000000000000000034 /* WorkoutPlanningEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000038 /* WorkoutPlanningEngine.swift */; };
+		B00000000000000000000035 /* TodayWorkoutRecommendationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000039 /* TodayWorkoutRecommendationView.swift */; };
+		B00000000000000000000036 /* FoundationModelWorkoutPersonalizerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000040 /* FoundationModelWorkoutPersonalizerTests.swift */; };
+		B00000000000000000000037 /* WorkoutPlanningEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000041 /* WorkoutPlanningEngineTests.swift */; };
+		D7A100000000000000000001 /* DailyTrainingStateBuilderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7A100000000000000000002 /* DailyTrainingStateBuilderTests.swift */; };
+		B90000000000000000000001 /* AppBrand.swift */ = {isa = PBXBuildFile; fileRef = F90000000000000000000001; };
+		B90000000000000000000002 /* NutritionModel.swift */ = {isa = PBXBuildFile; fileRef = F90000000000000000000002; };
+		B90000000000000000000003 /* LegacyCompatibility.swift */ = {isa = PBXBuildFile; fileRef = F90000000000000000000003; };
+		B90000000000000000000004 /* NutritionView.swift */ = {isa = PBXBuildFile; fileRef = F90000000000000000000004; };
+		B90000000000000000000005 /* NutritionSetupView.swift */ = {isa = PBXBuildFile; fileRef = F90000000000000000000005; };
+		B90000000000000000000006 /* NutritionWhatIfView.swift */ = {isa = PBXBuildFile; fileRef = F90000000000000000000006; };
+		B90000000000000000000007 /* MealEditorView.swift */ = {isa = PBXBuildFile; fileRef = F90000000000000000000007; };
+		B90000000000000000000008 /* NutritionProgressView.swift */ = {isa = PBXBuildFile; fileRef = F90000000000000000000008; };
+		B90000000000000000000009 /* FoodCaptureView.swift */ = {isa = PBXBuildFile; fileRef = F90000000000000000000009; };
+		B9000000000000000000000A /* NutritionModels.swift */ = {isa = PBXBuildFile; fileRef = F9000000000000000000000A; };
+		B9000000000000000000000B /* NutritionRecords.swift */ = {isa = PBXBuildFile; fileRef = F9000000000000000000000B; };
+		B9000000000000000000000C /* NutritionAdaptationEngine.swift */ = {isa = PBXBuildFile; fileRef = F9000000000000000000000C; };
+		B9000000000000000000000D /* NutritionStore.swift */ = {isa = PBXBuildFile; fileRef = F9000000000000000000000D; };
+		B9000000000000000000000E /* NutritionHealthService.swift */ = {isa = PBXBuildFile; fileRef = F9000000000000000000000E; };
+		B9000000000000000000000F /* FoodCatalogStore.swift */ = {isa = PBXBuildFile; fileRef = F9000000000000000000000F; };
+		B90000000000000000000010 /* AppleFoodRecognitionService.swift */ = {isa = PBXBuildFile; fileRef = F90000000000000000000010; };
+		B90000000000000000000011 /* NutritionEngine.swift */ = {isa = PBXBuildFile; fileRef = F90000000000000000000011; };
+		B90000000000000000000012 /* FoodCatalog.json */ = {isa = PBXBuildFile; fileRef = F90000000000000000000012; };
+		B90000000000000000000013 /* legacy-workouts.store */ = {isa = PBXBuildFile; fileRef = F90000000000000000000013; };
+B90000000000000000009999 /* NutritionTests.swift */ = {isa = PBXBuildFile; fileRef = F90000000000000000009999; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		C00000000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A00000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A10000000000000000000001;
+			remoteInfo = Dayvera;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		F00000000000000000000001 /* DayveraApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayveraApp.swift; sourceTree = "<group>"; };
+		F00000000000000000000002 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		F00000000000000000000003 /* HealthModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthModels.swift; sourceTree = "<group>"; };
+		F00000000000000000000004 /* WorkoutModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutModels.swift; sourceTree = "<group>"; };
+		F00000000000000000000005 /* WellnessEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WellnessEngine.swift; sourceTree = "<group>"; };
+		F00000000000000000000006 /* HealthKitService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitService.swift; sourceTree = "<group>"; };
+		F00000000000000000000007 /* CalendarService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarService.swift; sourceTree = "<group>"; };
+		F00000000000000000000008 /* AlarmService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmService.swift; sourceTree = "<group>"; };
+		F00000000000000000000009 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
+		F00000000000000000000010 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		F00000000000000000000011 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		F00000000000000000000012 /* NightPlanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NightPlanView.swift; sourceTree = "<group>"; };
+		F00000000000000000000013 /* WorkoutsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutsView.swift; sourceTree = "<group>"; };
+		F00000000000000000000014 /* ProgressView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressView.swift; sourceTree = "<group>"; };
+		F00000000000000000000015 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		F00000000000000000000016 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		F00000000000000000000017 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		F00000000000000000000018 /* Dayvera.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Dayvera.entitlements; sourceTree = "<group>"; };
+		F00000000000000000000019 /* WellnessEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WellnessEngineTests.swift; sourceTree = "<group>"; };
+		F00000000000000000000020 /* WorkoutModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutModelsTests.swift; sourceTree = "<group>"; };
+		F00000000000000000000021 /* Dayvera.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Dayvera.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F00000000000000000000022 /* DayveraTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DayveraTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		F00000000000000000000023 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		F00000000000000000000024 /* DemoServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoServices.swift; sourceTree = "<group>"; };
+		F00000000000000000000025 /* AppModelLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModelLifecycleTests.swift; sourceTree = "<group>"; };
+		F00000000000000000000026 /* ExerciseCatalogModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseCatalogModels.swift; sourceTree = "<group>"; };
+		F00000000000000000000027 /* ExerciseCatalogStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseCatalogStore.swift; sourceTree = "<group>"; };
+		F00000000000000000000028 /* ExerciseCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseCatalogTests.swift; sourceTree = "<group>"; };
+		F00000000000000000000029 /* ExerciseLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseLibraryView.swift; sourceTree = "<group>"; };
+		F00000000000000000000030 /* DataSourcesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataSourcesView.swift; sourceTree = "<group>"; };
+		F00000000000000000000031 /* HealthKitServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitServiceTests.swift; sourceTree = "<group>"; };
+		F00000000000000000000032 /* WorkoutPlanningModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutPlanningModels.swift; sourceTree = "<group>"; };
+		F00000000000000000000033 /* TrainingProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrainingProfile.swift; sourceTree = "<group>"; };
+		F00000000000000000000034 /* CuratedExerciseCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CuratedExerciseCatalog.swift; sourceTree = "<group>"; };
+		F00000000000000000000035 /* DailyTrainingStateBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyTrainingStateBuilder.swift; sourceTree = "<group>"; };
+		F00000000000000000000036 /* FoundationModelWorkoutPersonalizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoundationModelWorkoutPersonalizer.swift; sourceTree = "<group>"; };
+		F00000000000000000000037 /* WorkoutPersonalizationRequestBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutPersonalizationRequestBuilder.swift; sourceTree = "<group>"; };
+		F00000000000000000000038 /* WorkoutPlanningEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutPlanningEngine.swift; sourceTree = "<group>"; };
+		F00000000000000000000039 /* TodayWorkoutRecommendationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayWorkoutRecommendationView.swift; sourceTree = "<group>"; };
+		F00000000000000000000040 /* FoundationModelWorkoutPersonalizerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoundationModelWorkoutPersonalizerTests.swift; sourceTree = "<group>"; };
+		F00000000000000000000041 /* WorkoutPlanningEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutPlanningEngineTests.swift; sourceTree = "<group>"; };
+		D7A100000000000000000002 /* DailyTrainingStateBuilderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyTrainingStateBuilderTests.swift; sourceTree = "<group>"; };
+		F90000000000000000000001 /* AppBrand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Dayvera/App/AppBrand.swift"; sourceTree = SOURCE_ROOT; };
+		F90000000000000000000002 /* NutritionModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Dayvera/App/NutritionModel.swift"; sourceTree = SOURCE_ROOT; };
+		F90000000000000000000003 /* LegacyCompatibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Dayvera/App/LegacyCompatibility.swift"; sourceTree = SOURCE_ROOT; };
+		F90000000000000000000004 /* NutritionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Dayvera/Views/NutritionView.swift"; sourceTree = SOURCE_ROOT; };
+		F90000000000000000000005 /* NutritionSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Dayvera/Views/NutritionSetupView.swift"; sourceTree = SOURCE_ROOT; };
+		F90000000000000000000006 /* NutritionWhatIfView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Dayvera/Views/NutritionWhatIfView.swift"; sourceTree = SOURCE_ROOT; };
+		F90000000000000000000007 /* MealEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Dayvera/Views/MealEditorView.swift"; sourceTree = SOURCE_ROOT; };
+		F90000000000000000000008 /* NutritionProgressView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Dayvera/Views/NutritionProgressView.swift"; sourceTree = SOURCE_ROOT; };
+		F90000000000000000000009 /* FoodCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Dayvera/Views/FoodCaptureView.swift"; sourceTree = SOURCE_ROOT; };
+		F9000000000000000000000A /* NutritionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Dayvera/Domain/NutritionModels.swift"; sourceTree = SOURCE_ROOT; };
+		F9000000000000000000000B /* NutritionRecords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Dayvera/Domain/NutritionRecords.swift"; sourceTree = SOURCE_ROOT; };
+		F9000000000000000000000C /* NutritionAdaptationEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Dayvera/Services/NutritionAdaptationEngine.swift"; sourceTree = SOURCE_ROOT; };
+		F9000000000000000000000D /* NutritionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Dayvera/Services/NutritionStore.swift"; sourceTree = SOURCE_ROOT; };
+		F9000000000000000000000E /* NutritionHealthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Dayvera/Services/NutritionHealthService.swift"; sourceTree = SOURCE_ROOT; };
+		F9000000000000000000000F /* FoodCatalogStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Dayvera/Services/FoodCatalogStore.swift"; sourceTree = SOURCE_ROOT; };
+		F90000000000000000000010 /* AppleFoodRecognitionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Dayvera/Services/AppleFoodRecognitionService.swift"; sourceTree = SOURCE_ROOT; };
+		F90000000000000000000011 /* NutritionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Dayvera/Services/NutritionEngine.swift"; sourceTree = SOURCE_ROOT; };
+		F90000000000000000000012 /* FoodCatalog.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "Dayvera/Resources/FoodCatalog.json"; sourceTree = SOURCE_ROOT; };
+		F90000000000000000000013 /* legacy-workouts.store */ = {isa = PBXFileReference; lastKnownFileType = file; path = "DayveraTests/Fixtures/legacy-workouts.store"; sourceTree = SOURCE_ROOT; };
+F90000000000000000009999 /* NutritionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayveraTests/NutritionTests.swift; sourceTree = SOURCE_ROOT; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		D00000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D00000000000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A00000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000002 /* Dayvera */,
+				A00000000000000000000008 /* DayveraTests */,
+				A00000000000000000000009 /* Products */,
+                A90000000000000000000001 /* Nutrition */,
+			);
+			sourceTree = "<group>";
+		};
+		A00000000000000000000002 /* Dayvera */ = {
+			isa = PBXGroup;
+			children = (
+				F00000000000000000000023 /* Info.plist */,
+				A00000000000000000000003 /* App */,
+				A00000000000000000000004 /* Domain */,
+				A00000000000000000000005 /* Services */,
+				A00000000000000000000006 /* Views */,
+				A00000000000000000000007 /* Resources */,
+				F00000000000000000000018 /* Dayvera.entitlements */,
+			);
+			path = Dayvera;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000003 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				F00000000000000000000001 /* DayveraApp.swift */,
+				F00000000000000000000002 /* AppModel.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000004 /* Domain */ = {
+			isa = PBXGroup;
+			children = (
+				F00000000000000000000003 /* HealthModels.swift */,
+				F00000000000000000000004 /* WorkoutModels.swift */,
+				F00000000000000000000026 /* ExerciseCatalogModels.swift */,
+				F00000000000000000000032 /* WorkoutPlanningModels.swift */,
+				F00000000000000000000033 /* TrainingProfile.swift */,
+			);
+			path = Domain;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000005 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				F00000000000000000000005 /* WellnessEngine.swift */,
+				F00000000000000000000006 /* HealthKitService.swift */,
+				F00000000000000000000007 /* CalendarService.swift */,
+				F00000000000000000000008 /* AlarmService.swift */,
+				F00000000000000000000024 /* DemoServices.swift */,
+				F00000000000000000000027 /* ExerciseCatalogStore.swift */,
+				F00000000000000000000034 /* CuratedExerciseCatalog.swift */,
+				F00000000000000000000035 /* DailyTrainingStateBuilder.swift */,
+				F00000000000000000000036 /* FoundationModelWorkoutPersonalizer.swift */,
+				F00000000000000000000037 /* WorkoutPersonalizationRequestBuilder.swift */,
+				F00000000000000000000038 /* WorkoutPlanningEngine.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000006 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				F00000000000000000000009 /* DesignSystem.swift */,
+				F00000000000000000000010 /* RootView.swift */,
+				F00000000000000000000011 /* DashboardView.swift */,
+				F00000000000000000000012 /* NightPlanView.swift */,
+				F00000000000000000000013 /* WorkoutsView.swift */,
+				F00000000000000000000014 /* ProgressView.swift */,
+				F00000000000000000000015 /* SettingsView.swift */,
+				F00000000000000000000029 /* ExerciseLibraryView.swift */,
+				F00000000000000000000030 /* DataSourcesView.swift */,
+				F00000000000000000000039 /* TodayWorkoutRecommendationView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000007 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				F00000000000000000000016 /* Assets.xcassets */,
+				F00000000000000000000017 /* PrivacyInfo.xcprivacy */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000008 /* DayveraTests */ = {
+			isa = PBXGroup;
+			children = (
+				F00000000000000000000019 /* WellnessEngineTests.swift */,
+				F00000000000000000000020 /* WorkoutModelsTests.swift */,
+				F00000000000000000000025 /* AppModelLifecycleTests.swift */,
+				F00000000000000000000028 /* ExerciseCatalogTests.swift */,
+				F00000000000000000000031 /* HealthKitServiceTests.swift */,
+				F00000000000000000000040 /* FoundationModelWorkoutPersonalizerTests.swift */,
+				F00000000000000000000041 /* WorkoutPlanningEngineTests.swift */,
+				D7A100000000000000000002 /* DailyTrainingStateBuilderTests.swift */,
+			);
+			path = DayveraTests;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000009 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				F00000000000000000000021 /* Dayvera.app */,
+				F00000000000000000000022 /* DayveraTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		A90000000000000000000001 /* Nutrition */ = {isa = PBXGroup; name = Nutrition; children = (
+F90000000000000000009999,
+				F90000000000000000000001 /* AppBrand.swift */,
+				F90000000000000000000002 /* NutritionModel.swift */,
+				F90000000000000000000003 /* LegacyCompatibility.swift */,
+				F90000000000000000000004 /* NutritionView.swift */,
+				F90000000000000000000005 /* NutritionSetupView.swift */,
+				F90000000000000000000006 /* NutritionWhatIfView.swift */,
+				F90000000000000000000007 /* MealEditorView.swift */,
+				F90000000000000000000008 /* NutritionProgressView.swift */,
+				F90000000000000000000009 /* FoodCaptureView.swift */,
+				F9000000000000000000000A /* NutritionModels.swift */,
+				F9000000000000000000000B /* NutritionRecords.swift */,
+				F9000000000000000000000C /* NutritionAdaptationEngine.swift */,
+				F9000000000000000000000D /* NutritionStore.swift */,
+				F9000000000000000000000E /* NutritionHealthService.swift */,
+				F9000000000000000000000F /* FoodCatalogStore.swift */,
+				F90000000000000000000010 /* AppleFoodRecognitionService.swift */,
+				F90000000000000000000011 /* NutritionEngine.swift */,
+				F90000000000000000000012 /* FoodCatalog.json */,
+				F90000000000000000000013 /* legacy-workouts.store */,
+); sourceTree = "<group>"; };
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A10000000000000000000001 /* Dayvera */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E00000000000000000000001 /* Build configuration list for PBXNativeTarget "Dayvera" */;
+			buildPhases = (
+				D10000000000000000000001 /* Sources */,
+				D00000000000000000000001 /* Frameworks */,
+				D20000000000000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Dayvera;
+			productName = Dayvera;
+			productReference = F00000000000000000000021 /* Dayvera.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A10000000000000000000002 /* DayveraTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E00000000000000000000002 /* Build configuration list for PBXNativeTarget "DayveraTests" */;
+			buildPhases = (
+				D10000000000000000000002 /* Sources */,
+				D00000000000000000000002 /* Frameworks */,
+				D20000000000000000000002 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				C10000000000000000000001 /* PBXTargetDependency */,
+			);
+			name = DayveraTests;
+			productName = DayveraTests;
+			productReference = F00000000000000000000022 /* DayveraTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A00000000000000000000000 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2600;
+				LastUpgradeCheck = 2600;
+				TargetAttributes = {
+					A10000000000000000000001 = {
+						CreatedOnToolsVersion = 26.0;
+						SystemCapabilities = {
+							com.apple.HealthKit = {
+								enabled = 1;
+							};
+						};
+					};
+					A10000000000000000000002 = {
+						CreatedOnToolsVersion = 26.0;
+						TestTargetID = A10000000000000000000001;
+					};
+				};
+			};
+			buildConfigurationList = E00000000000000000000000 /* Build configuration list for PBXProject "Dayvera" */;
+			compatibilityVersion = "Xcode 15.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = A00000000000000000000001;
+			productRefGroup = A00000000000000000000009 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A10000000000000000000001 /* Dayvera */,
+				A10000000000000000000002 /* DayveraTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		D20000000000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B90000000000000000000012 /* FoodCatalog.json */,
+				B00000000000000000000016 /* Assets.xcassets in Resources */,
+				B00000000000000000000017 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D20000000000000000000002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B90000000000000000000013 /* legacy-workouts.store */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		D10000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B90000000000000000000011 /* NutritionEngine.swift */,
+				B90000000000000000000010 /* AppleFoodRecognitionService.swift */,
+				B9000000000000000000000F /* FoodCatalogStore.swift */,
+				B9000000000000000000000E /* NutritionHealthService.swift */,
+				B9000000000000000000000D /* NutritionStore.swift */,
+				B9000000000000000000000C /* NutritionAdaptationEngine.swift */,
+				B9000000000000000000000B /* NutritionRecords.swift */,
+				B9000000000000000000000A /* NutritionModels.swift */,
+				B90000000000000000000009 /* FoodCaptureView.swift */,
+				B90000000000000000000008 /* NutritionProgressView.swift */,
+				B90000000000000000000007 /* MealEditorView.swift */,
+				B90000000000000000000006 /* NutritionWhatIfView.swift */,
+				B90000000000000000000005 /* NutritionSetupView.swift */,
+				B90000000000000000000004 /* NutritionView.swift */,
+				B90000000000000000000003 /* LegacyCompatibility.swift */,
+				B90000000000000000000002 /* NutritionModel.swift */,
+				B90000000000000000000001 /* AppBrand.swift */,
+				B00000000000000000000001 /* DayveraApp.swift in Sources */,
+				B00000000000000000000002 /* AppModel.swift in Sources */,
+				B00000000000000000000003 /* HealthModels.swift in Sources */,
+				B00000000000000000000004 /* WorkoutModels.swift in Sources */,
+				B00000000000000000000005 /* WellnessEngine.swift in Sources */,
+				B00000000000000000000006 /* HealthKitService.swift in Sources */,
+				B00000000000000000000007 /* CalendarService.swift in Sources */,
+				B00000000000000000000008 /* AlarmService.swift in Sources */,
+				B00000000000000000000009 /* DesignSystem.swift in Sources */,
+				B00000000000000000000010 /* RootView.swift in Sources */,
+				B00000000000000000000011 /* DashboardView.swift in Sources */,
+				B00000000000000000000012 /* NightPlanView.swift in Sources */,
+				B00000000000000000000013 /* WorkoutsView.swift in Sources */,
+				B00000000000000000000014 /* ProgressView.swift in Sources */,
+				B00000000000000000000015 /* SettingsView.swift in Sources */,
+				B00000000000000000000020 /* DemoServices.swift in Sources */,
+				B00000000000000000000022 /* ExerciseCatalogModels.swift in Sources */,
+				B00000000000000000000023 /* ExerciseCatalogStore.swift in Sources */,
+				B00000000000000000000025 /* ExerciseLibraryView.swift in Sources */,
+				B00000000000000000000026 /* DataSourcesView.swift in Sources */,
+				B00000000000000000000028 /* WorkoutPlanningModels.swift in Sources */,
+				B00000000000000000000029 /* TrainingProfile.swift in Sources */,
+				B00000000000000000000030 /* CuratedExerciseCatalog.swift in Sources */,
+				B00000000000000000000031 /* DailyTrainingStateBuilder.swift in Sources */,
+				B00000000000000000000032 /* FoundationModelWorkoutPersonalizer.swift in Sources */,
+				B00000000000000000000033 /* WorkoutPersonalizationRequestBuilder.swift in Sources */,
+				B00000000000000000000034 /* WorkoutPlanningEngine.swift in Sources */,
+				B00000000000000000000035 /* TodayWorkoutRecommendationView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D10000000000000000000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+B90000000000000000009999,
+				B00000000000000000000018 /* WellnessEngineTests.swift in Sources */,
+				B00000000000000000000019 /* WorkoutModelsTests.swift in Sources */,
+				B00000000000000000000021 /* AppModelLifecycleTests.swift in Sources */,
+				B00000000000000000000024 /* ExerciseCatalogTests.swift in Sources */,
+				B00000000000000000000027 /* HealthKitServiceTests.swift in Sources */,
+				B00000000000000000000036 /* FoundationModelWorkoutPersonalizerTests.swift in Sources */,
+				B00000000000000000000037 /* WorkoutPlanningEngineTests.swift in Sources */,
+				D7A100000000000000000001 /* DailyTrainingStateBuilderTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		C10000000000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A10000000000000000000001 /* Dayvera */;
+			targetProxy = C00000000000000000000001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		E10000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		E10000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		E10000000000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Dayvera/Dayvera.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Dayvera/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Dayvera";
+				INFOPLIST_KEY_NSAlarmKitUsageDescription = "Dayvera schedules the wake alarm you approve for your next-day plan.";
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Dayvera reads your selected calendars and adds workout or privacy-safe Busy events only when you approve a morning plan.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Dayvera reads approved sleep, recovery, activity, workout, body-composition and optional dietary data to create private fitness guidance.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Dayvera saves completed workouts to Apple Health when you choose to finish a session.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.momoai.personalassistant.sleepcoach;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		E10000000000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Dayvera/Dayvera.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Dayvera/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Dayvera";
+				INFOPLIST_KEY_NSAlarmKitUsageDescription = "Dayvera schedules the wake alarm you approve for your next-day plan.";
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Dayvera reads your selected calendars and adds workout or privacy-safe Busy events only when you approve a morning plan.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Dayvera reads approved sleep, recovery, activity, workout, body-composition and optional dietary data to create private fitness guidance.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Dayvera saves completed workouts to Apple Health when you choose to finish a session.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.momoai.personalassistant.sleepcoach;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		E10000000000000000000005 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.momoai.personalassistant.sleepcoach.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Dayvera.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Dayvera";
+			};
+			name = Debug;
+		};
+		E10000000000000000000006 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.momoai.personalassistant.sleepcoach.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Dayvera.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Dayvera";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		E00000000000000000000000 /* Build configuration list for PBXProject "Dayvera" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E10000000000000000000001 /* Debug */,
+				E10000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E00000000000000000000001 /* Build configuration list for PBXNativeTarget "Dayvera" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E10000000000000000000003 /* Debug */,
+				E10000000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E00000000000000000000002 /* Build configuration list for PBXNativeTarget "DayveraTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E10000000000000000000005 /* Debug */,
+				E10000000000000000000006 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = A00000000000000000000000 /* Project object */;
+}

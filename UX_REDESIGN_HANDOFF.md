@@ -1,6 +1,8 @@
-# Sleep Coach UX flow contract
+# Dayvera UX flow contract
 
-Last updated: 2026-09-04
+Historical recovery/training flow contract · 2026-09-04
+
+The Dayvera nutrition release adds a fifth Nutrition tab, a Today summary, and a Nutrition destination under Progress. See [ARCHITECTURE.md](ARCHITECTURE.md) for the current navigation and data flow; the acceptance results below describe the earlier iOS 26 build.
 
 This document is the product and engineering handoff for the simulator-validated navigation redesign. Preserve these ownership rules unless a later usability study establishes a better model.
 
