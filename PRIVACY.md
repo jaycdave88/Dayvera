@@ -1,13 +1,13 @@
-# Sleep Coach privacy policy
+# Dayvera privacy policy
 
 Last updated: September 4, 2026
 
-Sleep Coach is a local-first wellness app. It has no Sleep Coach account,
+Dayvera is a local-first wellness app. It has no Dayvera account,
 app-managed server, advertising, analytics, or cross-app tracking.
 
 ## Data the app uses
 
-- With your permission, Sleep Coach reads supported sleep, heart-rate,
+- With your permission, Dayvera reads supported sleep, heart-rate,
   heart-rate variability, resting-heart-rate, respiratory-rate, blood-oxygen,
   temperature, activity, workout, and standard body-composition records from
   Apple Health. Body weight, body-fat percentage, lean body mass, and BMI are
@@ -30,31 +30,37 @@ app-managed server, advertising, analytics, or cross-app tracking.
 
 ## Sharing and network use
 
-Sleep Coach does not send Apple Health samples, workout records, Calendar data,
+Dayvera does not send Apple Health samples, workout records, Calendar data,
 or readiness results to the developer or to an app-managed cloud. Exercise
 metadata and illustrations are downloaded from RepDB over HTTPS; health and
 workout data are never attached to those requests. As with any network request,
 the catalog host can receive standard connection metadata under its own policy.
 
-When you finish a workout, you can grant write access for Sleep Coach to save a
+When you finish a workout, you can grant write access for Dayvera to save a
 strength workout to Apple Health. Apple Health, your Calendar provider, and your
 device backups are governed by Apple's and the relevant provider's policies.
-Sleep Coach marks its Application Support data as excluded from device backups.
+Dayvera marks its Application Support data as excluded from device backups.
 Its private-state files and SwiftData/Core Data store use protection that makes
 them available only after the first unlock following a reboot, so approved
 background handling can read app state while the phone is later locked. Apple
 Health samples themselves may remain unreadable until the phone is unlocked and
-Sleep Coach refreshes. The active-workout draft file uses complete protection
+Dayvera refreshes. The active-workout draft file uses complete protection
 while locked.
 
 ## Control and deletion
 
 You can change Apple Health and Calendar permissions in iOS Settings. Use Undo
-in Plan to remove app-owned schedule items. Deleting Sleep Coach removes its
+in Plan to remove app-owned schedule items. Deleting Dayvera removes its
 local container; items already written to Apple Health or Calendar remain under
 your control in those apps.
 
-Sleep Coach provides wellness guidance, not medical diagnosis or treatment.
+Dayvera provides wellness guidance, not medical diagnosis or treatment.
 For a privacy question, contact the repository owner through
-[the SleepCoach project](https://github.com/jaycdave88/SleepCoach) without
+[the Dayvera project](https://github.com/jaycdave88/Dayvera) without
 posting personal health information publicly.
+
+## Nutrition and meal photos
+
+Dayvera stores your nutrition profile, meal entries, optional meal thumbnails, daily source choices, completeness flags, measurements and target revisions locally. Saved photos are normalized to remove embedded metadata and stored with complete file protection, excluded from backup. Unsaved captures are discarded. Deleting a meal removes its associated image. No photo is sent to a cloud model.
+
+Food identification uses Apple's on-device Foundation Models when available. The bundled USDA reference catalog supplies nutrient values, scaled by the portions you review. Photo-derived portions remain estimates. The optional dietary import reads calories, protein, carbohydrates and fat from Apple Health. One selected source counts per day, and meals are not exported to Health. Turning import off clears its in-memory samples.
