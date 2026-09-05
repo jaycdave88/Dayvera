@@ -1,5 +1,101 @@
 import Foundation
 
+// MARK: - Motivation summaries
+
+enum ReturningExperience: Equatable, Sendable {
+    case none
+    case welcomeBack
+    case trendsNeedData
+
+    static func classify(
+        previousUse: Date?,
+        now: Date = .now,
+        calendar: Calendar = .current
+    ) -> ReturningExperience {
+        guard let previousUse else { return .none }
+        let previousDay = calendar.startOfDay(for: previousUse)
+        let currentDay = calendar.startOfDay(for: now)
+        guard previousDay <= currentDay,
+              let days = calendar.dateComponents([.day], from: previousDay, to: currentDay).day,
+              days >= 7 else { return .none }
+        return days >= 30 ? .trendsNeedData : .welcomeBack
+    }
+}
+
+struct WeeklyRhythm: Equatable, Sendable {
+    let weekStart: Date
+    let trainingCompleted: Int
+    let trainingTarget: Int
+    let completeNutritionDays: Int
+    let recoveryNightsRecorded: Int
+    let completedTrainingWeeksInLastFour: Int
+
+    var trainingProgress: Double {
+        min(Double(trainingCompleted) / Double(max(trainingTarget, 1)), 1)
+    }
+
+    var nutritionProgress: Double {
+        min(Double(completeNutritionDays) / 7, 1)
+    }
+
+    var trainingPlanMet: Bool { trainingCompleted >= trainingTarget }
+
+    var momentumText: String? {
+        guard completedTrainingWeeksInLastFour > 0 else { return nil }
+        return "Training met your plan in \(completedTrainingWeeksInLastFour) of the last 4 completed weeks."
+    }
+}
+
+enum WeeklyRhythmEngine {
+    static func summary(
+        now: Date = .now,
+        calendar suppliedCalendar: Calendar = .current,
+        sessionDates: [Date],
+        trainingTarget: Int,
+        completedNutritionDayKeys: Set<String>,
+        recoveryDates: [Date]
+    ) -> WeeklyRhythm {
+        let calendar = suppliedCalendar
+        let week = calendar.dateInterval(of: .weekOfYear, for: now)
+            ?? DateInterval(start: calendar.startOfDay(for: now), duration: 7 * 86_400)
+
+        let completedSessions = sessionDates.filter { week.contains($0) && $0 <= now }.count
+        let recoveryDays = uniqueDays(recoveryDates.filter { week.contains($0) && $0 <= now }, calendar: calendar)
+        let nutritionDays = dates(in: week, calendar: calendar).filter {
+            $0 <= now && completedNutritionDayKeys.contains(dayKey($0, calendar: calendar))
+        }.count
+
+        let completedPriorWeeks = (1...4).filter { offset in
+            guard let anchor = calendar.date(byAdding: .weekOfYear, value: -offset, to: week.start),
+                  let interval = calendar.dateInterval(of: .weekOfYear, for: anchor) else { return false }
+            return sessionDates.filter { interval.contains($0) && $0 <= now }.count >= max(trainingTarget, 1)
+        }.count
+
+        return WeeklyRhythm(
+            weekStart: week.start,
+            trainingCompleted: completedSessions,
+            trainingTarget: max(trainingTarget, 1),
+            completeNutritionDays: nutritionDays,
+            recoveryNightsRecorded: recoveryDays.count,
+            completedTrainingWeeksInLastFour: completedPriorWeeks
+        )
+    }
+
+    private static func uniqueDays(_ dates: [Date], calendar: Calendar) -> Set<Date> {
+        Set(dates.map { calendar.startOfDay(for: $0) })
+    }
+
+    private static func dates(in interval: DateInterval, calendar: Calendar) -> [Date] {
+        (0..<7).compactMap { calendar.date(byAdding: .day, value: $0, to: interval.start) }
+            .filter(interval.contains)
+    }
+
+    private static func dayKey(_ date: Date, calendar: Calendar) -> String {
+        let values = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", values.year ?? 0, values.month ?? 0, values.day ?? 0)
+    }
+}
+
 struct TrainingProfile: Codable, Equatable, Hashable, Sendable {
     var goal: TrainingGoal
     var targetSessionsPerWeek: Int

@@ -38,7 +38,7 @@ struct WorkoutsView: View {
                     emptyTemplatesCard
                 } else {
                     ForEach(templates) { template in
-                        templateCard(template)
+                        templateRow(template)
                     }
                 }
             }
@@ -181,64 +181,59 @@ struct WorkoutsView: View {
         return templates.first
     }
 
-    private func templateCard(_ template: WorkoutTemplateRecord) -> some View {
-        CoachCard {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(template.name).font(.title3.bold())
-                        Text("\(template.exercises.count) exercises · \(adaptedSetCount(template)) working sets today")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Menu {
-                        if activeDraft?.templateID == template.id {
-                            Button("Finish workout to edit", systemImage: "lock.fill") {}
-                                .disabled(true)
-                            Button("Finish workout to delete", systemImage: "lock.fill") {}
-                                .disabled(true)
-                        } else {
-                            Button("Edit template", systemImage: "pencil") { templateToEdit = template }
-                            Button("Delete…", role: .destructive) { templateToDelete = template }
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                            .frame(width: 44, height: 44)
-                    }
-                    .accessibilityLabel("More options for \(template.name)")
-                }
-
-                ForEach(template.exercises.prefix(3)) { exercise in
-                    templateExercisePreview(exercise)
-                }
-
-                if template.exercises.count > 3 {
-                    Text("+ \(template.exercises.count - 3) more")
+    private func templateRow(_ template: WorkoutTemplateRecord) -> some View {
+        HStack(spacing: 10) {
+            NavigationLink {
+                WorkoutPreviewView(
+                    template: template,
+                    adjustment: appModel.plan.workoutAdjustment,
+                    loadUnit: appModel.trainingProfile.loadUnit,
+                    canStart: activeDraft == nil,
+                    onStart: { activeTemplate = template }
+                )
+            } label: {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(template.name)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("\(template.exercises.count) exercises · \(adaptedSetCount(template)) working sets")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Text(lastCompletedDate(for: template).map { "Last completed \($0.shortDay)" } ?? "Not completed yet")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Opens workout preview")
 
-                if let lastCompleted = lastCompletedDate(for: template) {
-                    Label("Last completed \(lastCompleted.shortDay)", systemImage: "clock.fill")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                if activeDraft == nil {
-                    Button {
-                        activeTemplate = template
-                    } label: {
-                        Label("Start workout", systemImage: "play.fill")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .tint(Color.coachIndigo)
-                } else if activeDraft?.templateID != template.id {
-                    Label("Unavailable while another workout is active", systemImage: "lock.fill")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+            Button {
+                activeTemplate = template
+            } label: {
+                Image(systemName: activeDraft == nil ? "play.fill" : "lock.fill")
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.bordered)
+            .tint(Color.coachIndigo)
+            .disabled(activeDraft != nil)
+            .accessibilityLabel("Start \(template.name)")
+            .accessibilityHint(activeDraft == nil ? "Starts this workout immediately" : "Finish or discard the active workout first")
+        }
+        .padding(14)
+        .background(Color.coachSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .contextMenu {
+            if activeDraft?.templateID == template.id {
+                Button("Finish workout to edit", systemImage: "lock.fill") {}
+                    .disabled(true)
+                Button("Finish workout to delete", systemImage: "lock.fill") {}
+                    .disabled(true)
+            } else {
+                Button("Edit template", systemImage: "pencil") { templateToEdit = template }
+                Button("Delete…", role: .destructive) { templateToDelete = template }
             }
         }
     }
@@ -249,7 +244,10 @@ struct WorkoutsView: View {
                 Label("Workout in progress", systemImage: "figure.strengthtraining.traditional")
                     .font(.headline)
                     .foregroundStyle(Color.coachIndigo)
-                Text("\(template.name) · \(draft.sets.filter(\.isComplete).count) of \(draft.sets.count) sets complete")
+                Text(template.name)
+                    .font(.title2.bold())
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("\(draft.sets.filter(\.isComplete).count) of \(draft.sets.count) sets complete")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 if dynamicTypeSize.isAccessibilitySize {
@@ -358,6 +356,132 @@ struct WorkoutsView: View {
         templates.first(where: { $0.id == draft.templateID })
             ?? (generatedDraftTemplate?.id == draft.templateID ? generatedDraftTemplate : nil)
     }
+}
+
+private struct WorkoutPreviewView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    let template: WorkoutTemplateRecord
+    let adjustment: WorkoutAdjustment
+    let loadUnit: LoadUnit
+    let canStart: Bool
+    let onStart: () -> Void
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 20) {
+                CoachCard {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("TODAY'S ADJUSTMENT")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Text(adjustment.title)
+                            .font(.title2.bold())
+                        Label("About \(estimatedMinutes) min · \(setCount) working sets", systemImage: "clock")
+                            .font(.subheadline.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                        Text(adjustment.detail)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                SectionTitle(title: "Exercises", subtitle: "Today’s recovery-adjusted working sets")
+                VStack(spacing: 0) {
+                    ForEach(Array(template.exercises.enumerated()), id: \.element.id) { index, exercise in
+                        if index > 0 { Divider().padding(.leading, 14) }
+                        exerciseRow(exercise)
+                    }
+                }
+                .background(Color.coachSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+                if !canStart {
+                    Label("Finish or discard the workout in progress before starting another.", systemImage: "lock.fill")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Button {
+                    onStart()
+                } label: {
+                    Label("Start Workout", systemImage: "play.fill")
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.coachIndigo)
+                .disabled(!canStart)
+
+                NavigationLink {
+                    TemplateEditorView(template: template)
+                } label: {
+                    Text("Edit Template")
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.bordered)
+                .disabled(!canStart)
+            }
+            .padding()
+        }
+        .background(Color.coachBackground)
+        .navigationTitle(template.name)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func exerciseRow(_ exercise: WorkoutExercise) -> some View {
+        let count = adaptedWorkingSetCounts(
+            for: template.exercises,
+            volumeMultiplier: adjustment.volumeMultiplier
+        )[exercise.id, default: exercise.workingSets]
+        return Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(exercise.name).font(.headline)
+                    exercisePrescription(exercise, setCount: count)
+                }
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text(exercise.name).font(.headline)
+                    Spacer(minLength: 8)
+                    exercisePrescription(exercise, setCount: count)
+                        .multilineTextAlignment(.trailing)
+                }
+            }
+        }
+        .padding(14)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func exercisePrescription(_ exercise: WorkoutExercise, setCount: Int) -> some View {
+        let displayedLoad = workoutPreviewLoad(exercise, displayedIn: loadUnit)
+        return Text("\(setCount) × \(exercise.targetReps) · \(displayedLoad.formatted(.number.precision(.fractionLength(0...1)))) \(loadUnit.symbol)")
+            .font(.subheadline.monospacedDigit())
+            .foregroundStyle(.secondary)
+    }
+
+    private var setCount: Int {
+        adaptedWorkingSetCounts(
+            for: template.exercises,
+            volumeMultiplier: adjustment.volumeMultiplier
+        ).values.reduce(0, +)
+    }
+
+    private var estimatedMinutes: Int {
+        let activeSeconds = setCount * 45
+        let restSeconds = template.exercises.reduce(0) { partial, exercise in
+            let count = adaptedWorkingSetCounts(
+                for: template.exercises,
+                volumeMultiplier: adjustment.volumeMultiplier
+            )[exercise.id, default: exercise.workingSets]
+            return partial + max(count - 1, 0) * exercise.restSeconds
+        }
+        return max(Int(ceil(Double(activeSeconds + restSeconds) / 300.0)) * 5, 10)
+    }
+}
+
+func workoutPreviewLoad(_ exercise: WorkoutExercise, displayedIn unit: LoadUnit) -> Double {
+    exercise.resolvedLoadUnit.convert(exercise.targetWeight, to: unit)
 }
 
 struct TemplateEditorView: View {
@@ -1190,9 +1314,17 @@ struct ActiveWorkoutView: View {
 
     private func exerciseHeader(_ exercise: WorkoutExercise) -> some View {
         HStack(spacing: 8) {
-            Text(exercise.name)
-                .font(.headline)
-                .foregroundStyle(Color.coachIndigo)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(exercise.name)
+                    .font(.headline)
+                    .foregroundStyle(Color.coachIndigo)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let position = exercises.firstIndex(where: { $0.id == exercise.id }) {
+                    Text("Exercise \(position + 1) of \(exercises.count)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
             Spacer(minLength: 8)
             Menu {
                 Button {
@@ -1318,7 +1450,7 @@ struct ActiveWorkoutView: View {
             HStack(spacing: 6) {
                 Image(systemName: "hourglass")
                     .foregroundStyle(Color.coachAmber)
-                Text("Rest \(restRemaining)s")
+                Text("Rest \(restClock)")
                     .font(.headline.monospacedDigit())
                 if let restSourceDescription {
                     Text("· \(restSourceDescription)")
@@ -1415,6 +1547,10 @@ struct ActiveWorkoutView: View {
             )
         }
         return String(format: "%02d:%02d", seconds / 60, seconds % 60)
+    }
+
+    private var restClock: String {
+        String(format: "%d:%02d", restRemaining / 60, restRemaining % 60)
     }
 
     private var completedSetCount: Int {

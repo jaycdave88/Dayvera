@@ -117,11 +117,14 @@ struct RootView: View {
     @State private var pendingCalendarSetup = LaunchDestination.showsCalendarSetup
     @State private var showingExerciseLibrary = LaunchDestination.showsExerciseLibrary
     @State private var progressSection = LaunchDestination.progressSection
+    @State private var returningExperience: ReturningExperience = .none
+    @State private var evaluatedReturningExperience = false
 
     var body: some View {
         TabView(selection: $selection) {
             NavigationStack {
                 DashboardView(
+                    returningExperience: returningExperience,
                     onOpenTrain: { selection = .train },
                     onOpenPlan: { selection = .plan },
                     onOpenRecoveryTrends: {
@@ -190,6 +193,10 @@ struct RootView: View {
             .interactiveDismissDisabled()
         }
         .task {
+            if !evaluatedReturningExperience {
+                evaluatedReturningExperience = true
+                returningExperience = appModel.returningExperience()
+            }
             nutrition.attach(modelContext)
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--demo-data") {
@@ -208,10 +215,20 @@ struct RootView: View {
                 await appModel.applyPlan()
             }
             #endif
+            if hasCompletedGuidedSetup {
+                appModel.recordMeaningfulUse()
+            }
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
+                returningExperience = appModel.returningExperience()
+                evaluatedReturningExperience = true
+                if hasCompletedGuidedSetup {
+                    appModel.recordMeaningfulUse()
+                }
                 Task { await appModel.refreshForForeground(); nutrition.updateHealthContext(appModel.snapshot); await nutrition.refreshHealth() }
+            } else if (phase == .inactive || phase == .background), hasCompletedGuidedSetup {
+                appModel.recordMeaningfulUse()
             }
         }
         .onChange(of: appModel.snapshot.generatedAt) { _, _ in nutrition.updateHealthContext(appModel.snapshot) }

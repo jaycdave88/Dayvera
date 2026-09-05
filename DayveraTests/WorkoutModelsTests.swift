@@ -3,6 +3,47 @@ import XCTest
 @testable import Dayvera
 
 final class WorkoutModelsTests: XCTestCase {
+    func testReturningExperienceAvoidsShortAbsenceAndFlagsLongTermTrendContext() {
+        let now = Date(timeIntervalSince1970: 10_000_000)
+
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/New_York")!
+        XCTAssertEqual(ReturningExperience.classify(previousUse: now.addingTimeInterval(-2 * 86_400), now: now, calendar: calendar), .none)
+        XCTAssertEqual(ReturningExperience.classify(previousUse: now.addingTimeInterval(-8 * 86_400), now: now, calendar: calendar), .welcomeBack)
+        XCTAssertEqual(ReturningExperience.classify(previousUse: now.addingTimeInterval(-31 * 86_400), now: now, calendar: calendar), .trendsNeedData)
+        XCTAssertEqual(ReturningExperience.classify(previousUse: now.addingTimeInterval(86_400), now: now, calendar: calendar), .none)
+    }
+
+    func testWeeklyRhythmCountsCompletedSessionsAndUniqueRecoveryDays() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        calendar.firstWeekday = 2
+        let now = calendar.date(from: DateComponents(year: 2026, month: 9, day: 12, hour: 12))!
+        func date(_ year: Int, _ month: Int, _ day: Int, _ hour: Int = 12) -> Date {
+            calendar.date(from: DateComponents(year: year, month: month, day: day, hour: hour))!
+        }
+
+        let result = WeeklyRhythmEngine.summary(
+            now: now,
+            calendar: calendar,
+            sessionDates: [
+                date(2026, 9, 7), date(2026, 9, 7, 18), date(2026, 9, 9),
+                date(2026, 9, 1), date(2026, 9, 2), date(2026, 9, 3),
+                date(2026, 8, 24), date(2026, 8, 25), date(2026, 8, 26)
+            ],
+            trainingTarget: 3,
+            completedNutritionDayKeys: ["2026-09-07", "2026-09-08", "2026-09-09", "2026-09-10", "2026-09-11", "2026-09-13"],
+            recoveryDates: [date(2026, 9, 7), date(2026, 9, 8), date(2026, 9, 8, 18)]
+        )
+
+        XCTAssertEqual(result.trainingCompleted, 3)
+        XCTAssertEqual(result.completeNutritionDays, 5)
+        XCTAssertEqual(result.nutritionProgress, 5.0 / 7.0, accuracy: 0.0001)
+        XCTAssertEqual(result.recoveryNightsRecorded, 2)
+        XCTAssertEqual(result.completedTrainingWeeksInLastFour, 2)
+        XCTAssertTrue(result.trainingPlanMet)
+    }
+
     func testWorkoutReadinessDistinguishesMissingDataFromRealZero() {
         let unavailable = WorkoutSessionRecord(
             templateID: nil,
@@ -266,6 +307,22 @@ final class WorkoutModelsTests: XCTestCase {
     func testLoadUnitsRemainPairedWithValuesAndConvertForComparison() {
         XCTAssertEqual(LoadUnit.pounds.convert(220.462, to: .kilograms), 100, accuracy: 0.001)
         XCTAssertEqual(LoadUnit.kilograms.convert(100, to: .pounds), 220.462, accuracy: 0.001)
+
+        let metricTemplateExercise = WorkoutExercise(
+            name: "Deadlift",
+            muscleGroup: .back,
+            workingSets: 3,
+            targetReps: 5,
+            targetWeight: 100,
+            loadUnit: .kilograms,
+            targetRPE: 8,
+            restSeconds: 120
+        )
+        XCTAssertEqual(
+            workoutPreviewLoad(metricTemplateExercise, displayedIn: .pounds),
+            220.462,
+            accuracy: 0.001
+        )
 
         let exerciseID = UUID()
         let pounds = session(

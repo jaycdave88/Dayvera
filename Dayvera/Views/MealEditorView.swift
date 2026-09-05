@@ -1,5 +1,9 @@
 import SwiftUI
 
+enum MealEditorInitialAction {
+    case takePhoto, choosePhoto, search, nutritionLabel
+}
+
 struct MealEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var nutrition: NutritionModel
@@ -12,14 +16,28 @@ struct MealEditorView: View {
     @State private var searchRequest: FoodSearchRequest?
     @State private var editEntry: FoodEntry?
     @State private var showCapture = false
+    @State private var captureSource: FoodCaptureSource = .choice
+    @State private var appliedInitialAction = false
     @State private var reviewed = false
     @State private var error: String?
+    private let initialAction: MealEditorInitialAction?
+    private let onSaved: (() -> Void)?
 
-    init(existing: MealRecord? = nil, date: Date = .now, capture: Bool = false) {
+    init(existing: MealRecord? = nil, date: Date = .now, capture: Bool = false, initialAction: MealEditorInitialAction? = nil, onSaved: (() -> Void)? = nil) {
         self.existing = existing; _name = State(initialValue: existing?.name ?? "Meal")
         _date = State(initialValue: existing?.date ?? date)
         _entries = State(initialValue: existing?.entries ?? [])
-        _showCapture = State(initialValue: capture)
+        self.initialAction = initialAction ?? (capture ? .takePhoto : nil)
+        self.onSaved = onSaved
+    }
+
+    init(copying meal: MealRecord, date: Date, onSaved: (() -> Void)? = nil) {
+        existing = nil
+        _name = State(initialValue: meal.name)
+        _date = State(initialValue: date)
+        _entries = State(initialValue: meal.entries)
+        initialAction = nil
+        self.onSaved = onSaved
     }
     var body: some View {
         NavigationStack {
@@ -30,22 +48,24 @@ struct MealEditorView: View {
                     if let data = photo ?? existing?.photoFilename.flatMap({ NutritionStore.photoURL($0).flatMap { try? Data(contentsOf: $0) } }), let image = UIImage(data: data) {
                         Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 210).clipShape(RoundedRectangle(cornerRadius: 16))
                     }
-                    Button { showCapture = true } label: { Label("Photograph food", systemImage: "camera.fill") }
+                    Button { captureSource = .choice; showCapture = true } label: { Label("Add or replace photo", systemImage: "camera.fill") }
+                        .frame(minHeight: 44)
                 }
                 if !candidates.isEmpty {
                     Section("Check the detected foods") {
                         ForEach(candidates) { candidate in
                             VStack(alignment: .leading, spacing: 8) {
                                 Text(candidate.name).font(.headline)
-                                Text("About \(Int(candidate.estimatedGrams)) g · photo estimate").foregroundStyle(.secondary)
+                                Text("Estimated portion · ~\(Int(candidate.estimatedGrams)) g").foregroundStyle(.secondary)
+                                Text("Food match needed").font(.subheadline.weight(.semibold)).foregroundStyle(Color.coachAmber)
                                 Text(candidate.question).font(.footnote)
                                 HStack {
-                                    Button("Match food") { searchRequest = FoodSearchRequest(candidate: candidate) }.buttonStyle(.bordered)
+                                    Button("Find Food") { searchRequest = FoodSearchRequest(candidate: candidate) }.buttonStyle(.borderedProminent)
                                     Button("Remove", role: .destructive) { candidates.removeAll { $0.id == candidate.id } }.buttonStyle(.borderless)
                                 }
                             }.padding(.vertical, 4)
                         }
-                        Text("Match each item or remove incorrect detections. Add oil, sauces, drinks, and hidden ingredients yourself.").font(.footnote).foregroundStyle(.secondary)
+                        Text("Photos can miss ingredients, oils, sauces, and exact portions. Match every suggestion to a trusted catalog food before saving.").font(.footnote).foregroundStyle(.secondary)
                     }
                 }
                 Section("Foods and portions") {
@@ -58,7 +78,8 @@ struct MealEditorView: View {
                             }
                         }
                     }.onDelete { entries.remove(atOffsets: $0); reviewed = false }
-                    Button { searchRequest = FoodSearchRequest() } label: { Label("Search or add manually", systemImage: "plus.circle.fill") }
+                    Button { searchRequest = FoodSearchRequest() } label: { Label("Add Missing Food", systemImage: "plus.circle.fill") }
+                        .frame(minHeight: 44)
                 }
                 Section("Meal total") {
                     let total = entries.reduce(NutritionAmounts.zero) { $0 + $1.nutrients }
@@ -71,18 +92,23 @@ struct MealEditorView: View {
                     }
                 }
                 if let error { Text(error).foregroundStyle(Color.coachRose) }
-            }.navigationTitle(existing == nil ? "Review meal" : "Edit meal")
+            }.navigationTitle(!candidates.isEmpty ? "Review Foods" : existing == nil ? "Review Meal" : "Edit Meal")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save meal") {
-                        do { try nutrition.saveMeal(id: existing?.id, name: name, date: date, entries: entries, photo: photo); dismiss() }
+                        do {
+                            try nutrition.saveMeal(id: existing?.id, name: name, date: date, entries: entries, photo: photo)
+                            onSaved?()
+                            dismiss()
+                        }
                         catch { self.error = error.localizedDescription }
                     }.disabled(!reviewed || entries.isEmpty || !candidates.isEmpty)
                 }
             }
+            .onAppear { applyInitialActionIfNeeded() }
             .sheet(isPresented: $showCapture) {
-                FoodCaptureView { data, result in photo = data; candidates = result; reviewed = false }
+                FoodCaptureView(initialSource: captureSource) { data, result in photo = data; candidates = result; reviewed = false }
             }
             .sheet(item: $searchRequest) { request in
                 FoodSearchView(request: request) { entry in
@@ -97,11 +123,29 @@ struct MealEditorView: View {
             }
         }
     }
+
+    private func applyInitialActionIfNeeded() {
+        guard !appliedInitialAction else { return }
+        appliedInitialAction = true
+        switch initialAction {
+        case .takePhoto:
+            captureSource = .camera; showCapture = true
+        case .choosePhoto:
+            captureSource = .photoLibrary; showCapture = true
+        case .search:
+            searchRequest = FoodSearchRequest()
+        case .nutritionLabel:
+            searchRequest = FoodSearchRequest(directCustom: true)
+        case nil:
+            break
+        }
+    }
 }
 
 struct FoodSearchRequest: Identifiable {
     let id = UUID()
     var candidate: RecognizedFood? = nil
+    var directCustom = false
 }
 
 struct FoodSearchView: View {
@@ -131,6 +175,13 @@ struct FoodSearchView: View {
                             Button("\(portion.label) · \(portion.grams.formatted()) g") { grams = portion.grams }
                         }
                         if let question = request.candidate?.question { Text(question).font(.footnote).foregroundStyle(.secondary) }
+                        let preview = selection.nutrients.scaled(max(grams, 0) / 100)
+                        LabeledContent("Calories", value: "\(Int(preview.calories.rounded())) kcal")
+                        LabeledContent("Protein", value: "\(preview.protein.nutritionGrams) g")
+                        LabeledContent("Carbs", value: "\(preview.carbs.nutritionGrams) g")
+                        LabeledContent("Fat", value: "\(preview.fat.nutritionGrams) g")
+                        Label("Trusted catalog match · USDA SR Legacy", systemImage: "checkmark.shield")
+                            .font(.footnote).foregroundStyle(.secondary)
                         Button("Add this food") {
                             do {
                                 guard let catalog = nutrition.catalog else { return }
@@ -156,7 +207,11 @@ struct FoodSearchView: View {
                 if let error { Text(error).foregroundStyle(Color.coachRose) }
             }.navigationTitle("Find food").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
-            .onAppear { query = request.candidate?.name ?? ""; grams = request.candidate?.estimatedGrams ?? 100 }
+            .onAppear {
+                query = request.candidate?.name ?? ""
+                grams = request.candidate?.estimatedGrams ?? 100
+                if request.directCustom { custom = true }
+            }
             .sheet(isPresented: $custom) {
                 FoodEntryEditor(entry: FoodEntry(name: query, grams: grams, nutrients: .zero, provenance: .manual), isNew: true) {
                     onAdd($0); dismiss()

@@ -1,0 +1,47 @@
+{
+  "file": {
+    "id": "40e06342-8830-80d6-8008-97472f73601e",
+    "name": "New File 1",
+    "requestedName": "Dayvera — Quiet Vitality",
+    "revisionAtReview": 105
+  },
+  "page": {
+    "id": "9832c0ce-d707-80ef-8008-9763d13d3484",
+    "name": "10 — Launch & Motivation",
+    "boardCount": 21
+  },
+  "library": {
+    "totalComponents": 208,
+    "newComponents": [
+      "Weekly Rhythm Card",
+      "Dark Weekly Rhythm Card",
+      "Micro Success Banner",
+      "Dark Micro Success Banner",
+      "Returning User Banner",
+      "Dark Returning User Banner",
+      "Milestone Card",
+      "Dark Milestone Card",
+      "Notification Preference Row",
+      "Dark Notification Preference Row"
+    ]
+  },
+  "screenFamilies": [
+    "Launch continuity",
+    "Progressive first launch",
+    "Weekly rhythm",
+    "Weekly summary",
+    "Return after one week",
+    "Return after one month",
+    "Routine completion",
+    "Meaningful milestone",
+    "Notification preferences",
+    "Mechanics decision matrix",
+    "Accessibility Extra Large and Reduce Motion"
+  ],
+  "qa": {
+    "fileValidationErrors": 0,
+    "outOfBoundsVisibleDescendants": 0,
+    "reviewedModes": ["light", "dark", "accessibility-extra-large", "reduce-motion"],
+    "savedVersion": "Dayvera · launch and light motivation"
+  }
+}

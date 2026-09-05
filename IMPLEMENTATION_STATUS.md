@@ -10,14 +10,31 @@ The current project is a native iPhone SwiftUI app targeting **iOS 27**. Its fiv
 - Meals support camera/Photos import, on-device structured food candidates, explicit database matching and portion review, manual label values, favorites, repeat/edit/delete, and local photos. The bundled USDA SR Legacy catalog contains 7,793 complete nutrient records; model output never supplies authoritative nutrients.
 - Dietary Health access is optional and independent of existing recovery reads. Exactly one intake source counts each day; missing macros remain unknown, failed imports clear stale totals, and completeness must be confirmed.
 - SwiftData adds five record types. Existing workout entity schemas remain unchanged. A database produced by the original module verifies migration, workout identity and Health-export continuity.
-- The final integrated iOS 27 simulator suite passed **209 tests with zero failures**, including original-store migration, macro conservation, source separation, missing-data handling, and illness-related target safeguards.
+- The nutrition-release simulator baseline passed **209 tests with zero failures**, including original-store migration, macro conservation, source separation, missing-data handling, and illness-related target safeguards. The later Penpot-aligned integrated suite is recorded below.
 - The final unsigned Release build succeeded against the iOS 27 physical-device SDK. The Debug simulator app installs and launches successfully; dark and Accessibility Extra Large light layouts were inspected.
 - Xcode 27 beta 6 and the iOS 27 simulator SDK compile the Apple Foundation Models image attachment and guided-generation APIs used here. Runtime model availability remains device-dependent.
 - Current nutrition captures are in [QA/README.md](QA/README.md). All captured data are synthetic.
 
+## Launch, navigation and light motivation update
+
+The current source implements the Penpot-approved launch and retention direction without introducing rigid streaks or a reward economy:
+
+- A static adaptive `UILaunchScreen` background resolves directly into the app. There is no post-launch logo animation, fake progress or artificial delay.
+- First launch retains the concise guided setup. Health, Calendar, alarm and camera requests remain contextual to the feature that needs them.
+- Returning users reach Today immediately. After seven days, a dismissible welcome message offers a simple path back; after 30 days, it also explains that recent trends may need more data.
+- Today includes Weekly Rhythm: completed sessions against the user's weekly session target, explicitly completed nutrition days, neutral recovery-data coverage, and four-week training momentum when available.
+- Meeting the weekly training plan can show one contextual milestone per week. Acknowledgement is local and protected. The app has no daily streak, points, levels, badge collection, leaderboard or loss-framed reminder.
+- Routine nutrition completion uses restrained native success feedback. Essential confirmation remains visible and does not depend on motion, haptics or color.
+
+Targeted tests cover return classification, session-based weekly summaries, unique recovery-day coverage, prior-week momentum and motivation-state persistence. The complete simulator suite passed **213 tests with zero failures or skips** on an iPhone 17 Pro running iOS 27.0. The integrated interface build installed and launched successfully, and the current five-tab, active-workout, Log Food, recovery-progress, and Settings surfaces were visually inspected.
+
 ### Device acceptance remaining for this release
 
 A connected iOS 27 phone was discovered, but its device identifier did not match any existing locally provisioned build. The machine has multiple development signing teams, so this release has not been installed onto that phone. Select the appropriate team in Xcode for a device build. Camera permission, real meal recognition/portion review, Apple Intelligence availability/download, dietary Health permissions/imports, and upgrading an existing installation still need hands-on acceptance. Simulator tests do not certify those system interactions or food-recognition accuracy.
+
+The inspected Penpot-aligned captures are indexed in [QA/README.md](QA/README.md). They cover all five tabs plus Log Food, Active Workout, Recovery Progress, and Settings. Light Mode, Accessibility Extra Large, Increase Contrast, return-after-absence, and real recognition-result captures remain follow-up acceptance evidence.
+
+The installed Xcode 26.6 toolchain supplies the iOS 26.5 SDK, which does not expose the iOS 27 Foundation Models vision symbols used by `AppleFoodRecognitionService`. For local simulator integration only, the service was temporarily replaced with an unavailable-capability fallback; the checked-in production source was restored immediately afterward and has no compatibility-stub diff. This validated the surrounding UI, persistence, and fallback paths. A clean production build and real photo-recognition run still require Xcode 27 and a supported physical device.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the integration and file map, and [NUTRITION.md](NUTRITION.md) for formulas, evidence requirements and safety constraints.
 

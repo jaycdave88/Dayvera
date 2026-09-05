@@ -360,6 +360,8 @@ final class AppModel: ObservableObject {
     private static let trainingProfileKey = "trainingProfile"
     private static let appliedPlanStatusKey = "appliedPlanStatus"
     private static let calendarPreferencesKey = "calendarPreferences"
+    private static let lastMeaningfulUseKey = "lastMeaningfulUse"
+    private static let motivationAcknowledgementsKey = "motivationAcknowledgements"
 
     init(
         health: HealthDataProviding = HealthKitService(),
@@ -509,6 +511,37 @@ final class AppModel: ObservableObject {
             }
         }
         refreshCalendarConfiguration()
+    }
+
+    func returningExperience(now: Date = .now, calendar: Calendar = .current) -> ReturningExperience {
+        let previousUse = privateStateStore.data(forKey: Self.lastMeaningfulUseKey)
+            .flatMap { try? JSONDecoder().decode(Date.self, from: $0) }
+        return ReturningExperience.classify(previousUse: previousUse, now: now, calendar: calendar)
+    }
+
+    @discardableResult
+    func recordMeaningfulUse(at date: Date = .now) -> Bool {
+        guard let data = try? JSONEncoder().encode(date) else { return false }
+        return privateStateStore.set(data, forKey: Self.lastMeaningfulUseKey)
+    }
+
+    func hasAcknowledgedMotivationReceipt(_ identifier: String) -> Bool {
+        motivationAcknowledgements().contains(identifier)
+    }
+
+    @discardableResult
+    func acknowledgeMotivationReceipt(_ identifier: String) -> Bool {
+        guard !identifier.isEmpty else { return false }
+        var acknowledgements = motivationAcknowledgements()
+        acknowledgements.insert(identifier)
+        guard let data = try? JSONEncoder().encode(acknowledgements) else { return false }
+        return privateStateStore.set(data, forKey: Self.motivationAcknowledgementsKey)
+    }
+
+    private func motivationAcknowledgements() -> Set<String> {
+        privateStateStore.data(forKey: Self.motivationAcknowledgementsKey)
+            .flatMap { try? JSONDecoder().decode(Set<String>.self, from: $0) }
+            ?? []
     }
 
     @discardableResult

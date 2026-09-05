@@ -12,6 +12,9 @@ struct NutritionWhatIfView: View {
             Form {
                 if let current = nutrition.target(on: .now) {
                     Section {
+                        Label("SCENARIO · NOT APPLIED", systemImage: "slider.horizontal.3")
+                            .font(.caption.bold()).foregroundStyle(Color.coachIndigo)
+                            .accessibilityLabel("Scenario. Not applied")
                         Text("Explore a change before committing.").font(.headline)
                         Text("This is a scenario, not a prediction of muscle or fat gain. Weight also changes with water, glycogen, digestion and activity.").foregroundStyle(.secondary)
                     }
@@ -32,10 +35,11 @@ struct NutritionWhatIfView: View {
                             LabeledContent("Training carbs / fat", value: "\(target.trainingDay.carbs.nutritionGrams) / \(target.trainingDay.fat.nutritionGrams) g")
                             LabeledContent("Weekly energy change", value: String(format: "%+.0f kcal", delta * 7))
                             Text("A 200-kcal increase adds 1,400 kcal per week. It does not establish how much will become muscle, fat, or increased expenditure.").font(.footnote).foregroundStyle(.secondary)
-                            Button("Apply scenario tomorrow") {
+                            Button("Apply Tomorrow") {
                                 do { try nutrition.applyScenario(calories: target.averageCalories, protein: protein, cycling: cycling); dismiss() }
                                 catch { self.error = error.localizedDescription }
-                            }.buttonStyle(.borderedProminent)
+                            }.buttonStyle(.borderedProminent).frame(minHeight: 44)
+                            Button("Reset") { resetScenario() }.frame(minHeight: 44)
                         }
                     } else { Text(scenarioError ?? "This scenario cannot be calculated.").foregroundStyle(Color.coachAmber) }
                     Section("Am I eating enough?") {
@@ -44,7 +48,7 @@ struct NutritionWhatIfView: View {
                 } else { Text("Set up an eligible nutrition profile first.") }
                 if let error { Text(error).foregroundStyle(Color.coachRose) }
             }.navigationTitle("What if?").navigationBarTitleDisplayMode(.inline)
-            .onAppear { protein = nutrition.revision(on: .now)?.profile?.proteinPerKG ?? nutrition.profile.proteinPerKG; cycling = nutrition.revision(on: .now)?.profile?.cyclesCalories ?? false }
+            .onAppear { resetScenario() }
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
         }
     }
@@ -55,4 +59,9 @@ struct NutritionWhatIfView: View {
     }
     private var scenario: NutritionTarget? { try? calculate() }
     private var scenarioError: String? { do { _ = try calculate(); return nil } catch { return error.localizedDescription } }
+    private func resetScenario() {
+        delta = 0
+        protein = nutrition.revision(on: .now)?.profile?.proteinPerKG ?? nutrition.profile.proteinPerKG
+        cycling = nutrition.revision(on: .now)?.profile?.cyclesCalories ?? false
+    }
 }

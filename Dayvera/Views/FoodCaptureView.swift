@@ -2,16 +2,30 @@ import AVFoundation
 import PhotosUI
 import SwiftUI
 
+enum FoodCaptureSource {
+    case choice, camera, photoLibrary
+}
+
 struct FoodCaptureView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @EnvironmentObject private var nutrition: NutritionModel
     let onReview: (Data, [RecognizedFood]) -> Void
     @State private var pickerItem: PhotosPickerItem?
     @State private var photo: Data?
     @State private var showingCamera = false
+    @State private var showingPhotoPicker = false
+    @State private var cameraAccessDenied = false
     @State private var isAnalyzing = false
     @State private var error: String?
     @State private var analysis: Task<Void, Never>?
+    @State private var launchedInitialSource = false
+    let initialSource: FoodCaptureSource
+
+    init(initialSource: FoodCaptureSource = .choice, onReview: @escaping (Data, [RecognizedFood]) -> Void) {
+        self.initialSource = initialSource
+        self.onReview = onReview
+    }
 
     var body: some View {
         NavigationStack {
@@ -22,20 +36,32 @@ struct FoodCaptureView: View {
                     } else {
                         Image(systemName: "camera.macro").font(.system(size: 72)).foregroundStyle(Color.coachMint).padding(30).accessibilityHidden(true)
                     }
-                    Text("A photo is the starting point.").font(.title2.bold())
-                    Text("We’ll identify visible foods on your device. You’ll match the food, check portions, and add anything the camera cannot see before saving.")
+                    Text(isAnalyzing ? "Looking for foods…" : photo == nil ? "Add a meal photo" : "Review your photo").font(.title2.bold())
+                    Text(isAnalyzing
+                         ? "Dayvera will suggest foods and rough portions. You’ll review everything before anything is saved."
+                         : "A photo suggests visible foods and rough portions. Trusted nutrients come from the food you match, a package label, or values you enter.")
                         .foregroundStyle(.secondary)
                     if let reason = nutrition.recognition.unavailableReason { Text(reason).font(.callout).foregroundStyle(Color.coachAmber) }
-                    Button { Task { await openCamera() } } label: { Label("Take a photo", systemImage: "camera.fill").frame(maxWidth: .infinity, minHeight: 44) }
-                        .buttonStyle(.borderedProminent)
-                    PhotosPicker(selection: $pickerItem, matching: .images) { Label("Choose a photo", systemImage: "photo.on.rectangle") }
+                    if cameraAccessDenied {
+                        Button("Open Settings") {
+                            if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                        }
+                        .buttonStyle(.bordered).frame(minHeight: 44)
+                    }
+                    if !isAnalyzing {
+                        Button { Task { await openCamera() } } label: { Label(photo == nil ? "Take Photo" : "Retake Photo", systemImage: "camera.fill").frame(maxWidth: .infinity, minHeight: 44) }
+                            .buttonStyle(.borderedProminent)
+                        PhotosPicker(selection: $pickerItem, matching: .images) {
+                            Label(photo == nil ? "Choose Photo" : "Choose Another Photo", systemImage: "photo.on.rectangle").frame(minHeight: 44)
+                        }.buttonStyle(.bordered)
+                    }
                     if photo != nil {
                         Button { analyze() } label: {
-                            HStack { if isAnalyzing { SwiftUI.ProgressView() }; Text(isAnalyzing ? "Identifying food…" : "Identify food on device") }.frame(minHeight: 44)
-                        }.buttonStyle(.bordered).disabled(isAnalyzing || nutrition.recognition.unavailableReason != nil)
-                        Button("Use photo with manual food entry") {
+                            HStack { if isAnalyzing { SwiftUI.ProgressView() }; Text(isAnalyzing ? "Looking for foods…" : "Identify Food on Device") }.frame(maxWidth: .infinity, minHeight: 44)
+                        }.buttonStyle(.borderedProminent).disabled(isAnalyzing || nutrition.recognition.unavailableReason != nil)
+                        Button("Continue without recognition") {
                             if let photo { onReview(photo, []); dismiss() }
-                        }.frame(minHeight: 44)
+                        }.frame(minHeight: 44).disabled(isAnalyzing)
                     }
                     if let error { Text(error).foregroundStyle(Color.coachRose) }
                     Label("Photos stay on this device", systemImage: "lock.shield").font(.footnote).foregroundStyle(.secondary)
@@ -44,10 +70,20 @@ struct FoodCaptureView: View {
             .navigationTitle("Photograph food").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { analysis?.cancel(); dismiss() } } }
             .sheet(isPresented: $showingCamera) { CameraCapture { data in prepare(data) } }
+            .photosPicker(isPresented: $showingPhotoPicker, selection: $pickerItem, matching: .images)
             .onChange(of: pickerItem) { _, item in
                 Task {
                     do { if let data = try await item?.loadTransferable(type: Data.self) { prepare(data) } }
                     catch { self.error = "The selected photo could not be loaded." }
+                }
+            }
+            .task {
+                guard !launchedInitialSource else { return }
+                launchedInitialSource = true
+                switch initialSource {
+                case .camera: await openCamera()
+                case .photoLibrary: showingPhotoPicker = true
+                case .choice: break
                 }
             }
             .onDisappear { analysis?.cancel() }
@@ -58,9 +94,29 @@ struct FoodCaptureView: View {
         do { photo = try NutritionStore.normalizedPhoto(data); error = nil } catch { self.error = error.localizedDescription }
     }
     private func openCamera() async {
-        guard UIImagePickerController.isSourceTypeAvailable(.camera) else { error = "A camera is unavailable here. Choose a photo or enter food manually."; return }
-        let granted = await AVCaptureDevice.requestAccess(for: .video)
-        if granted { showingCamera = true } else { error = "Camera access is off. Enable it in Settings or choose a photo." }
+        cameraAccessDenied = false
+        guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
+            error = "A camera is unavailable on this device. Choose a photo or enter food manually."
+            return
+        }
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            showingCamera = true
+        case .notDetermined:
+            if await AVCaptureDevice.requestAccess(for: .video) {
+                showingCamera = true
+            } else {
+                cameraAccessDenied = true
+                error = "Camera access is off. Enable it in Settings or choose a photo."
+            }
+        case .denied:
+            cameraAccessDenied = true
+            error = "Camera access is off. Enable it in Settings or choose a photo."
+        case .restricted:
+            error = "Camera access is restricted on this device. Choose a photo or enter food manually."
+        @unknown default:
+            error = "Camera access is unavailable. Choose a photo or enter food manually."
+        }
     }
     private func analyze() {
         guard let photo else { return }
