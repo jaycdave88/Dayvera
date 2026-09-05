@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject private var appModel: AppModel
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @AppStorage("appearancePreference") private var appearanceRawValue = AppAppearance.system.rawValue
     @Binding var showingDataSources: Bool
     @Binding var showingCalendarSetup: Bool
 
@@ -33,6 +34,17 @@ struct SettingsView: View {
                         symbol: "fork.knife"
                     )
                 }
+            }
+
+            Section("Appearance") {
+                Picker("Color mode", selection: $appearanceRawValue) {
+                    ForEach(AppAppearance.allCases) { appearance in
+                        Text(appearance.title).tag(appearance.rawValue)
+                    }
+                }
+                Text("Applies immediately. System follows your iPhone’s appearance setting.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Data") {

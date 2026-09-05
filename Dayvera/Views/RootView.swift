@@ -109,6 +109,7 @@ struct RootView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("hasCompletedGuidedSetup") private var hasCompletedGuidedSetup = false
+    @AppStorage("appearancePreference") private var appearanceRawValue = AppAppearance.system.rawValue
     @State private var selection = AppTab.launchSelection
     @State private var showingSettings = LaunchDestination.showsSettings
     @State private var showingDataSources = false
@@ -186,6 +187,7 @@ struct RootView: View {
                 .tag(AppTab.progress)
         }
         .tint(Color.coachIndigo)
+        .preferredColorScheme(AppAppearance(rawValue: appearanceRawValue)?.colorScheme)
         .fullScreenCover(isPresented: onboardingPresentation) {
             GuidedSetupView {
                 hasCompletedGuidedSetup = true

@@ -39,6 +39,8 @@ struct NutritionView: View {
                     NavigationLink { NutritionProgressView() } label: {
                         CoachCard { HStack { Label("Weight, measurements & progress", systemImage: "chart.xyaxis.line"); Spacer(); Image(systemName: "chevron.right") } }
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Opens nutrition progress")
                     recoveryCard
                     adjustmentCard
                 }
@@ -415,5 +417,7 @@ struct NutritionTodayCard: View {
                 }
             }
         }
+        .buttonStyle(.plain)
+        .accessibilityHint("Opens Nutrition")
     }
 }
